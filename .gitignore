@@ -1,0 +1,28 @@
+# Build
+build/
+dist/
+*.egg-info/
+
+# References (large, not tracked)
+references/
+
+# Python
+__pycache__/
+*.py[cod]
+*.so
+.venv/
+venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Test
+.pytest_cache/
+.coverage
+htmlcov/
+
+# OS
+.DS_Store
+Thumbs.db
