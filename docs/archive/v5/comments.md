@@ -1,0 +1,4 @@
+1. We have task and taskset. But we don't have mechanism for runtime programming, such as programming strategies of dispatch and issue. We also don't support dynamic task generation and task execution synchronizatin. Since runtime needs to be sent to AICPUs for long-lived running, it should be programmed with all the functions or logics of the workload. You should read @docs/uv/requirements.md and @docs/uv/design-questions.md more carefully to know what must be programmed through the runtime extension to PTO-ISA.
+2. The strategies are not just some enums, like IssuePolicy. They should be much more general, maybe requiring a sublanguage to program.
+
+Create the next version of design.
