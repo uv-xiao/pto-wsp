@@ -48,4 +48,4 @@ V9 version has many problems to fix:
 
 For docs/v9_design_review_v2.md, the comments:
 
-1. 
+*1.1* : fix doc links. For versioning, we should use v9.3 as the design version. But the python package should have "version = 0.1.0", since we don't have a complete implementation yet. 
