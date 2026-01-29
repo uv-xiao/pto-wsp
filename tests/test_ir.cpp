@@ -1,6 +1,6 @@
 // PTO Workload-Schedule Programming (PTO-WSP) framework v9 - IR Unit Tests
 // Copyright (c) 2024 PTO Project
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: MIT
 
 #include "pto/rt/ir/ir.hpp"
 #include <iostream>
@@ -666,11 +666,11 @@ TEST(parser_cond) {
     assert(m.workloads[0].body->kind == NodeKind::Cond);
 
     auto* cond = static_cast<const CondNode*>(m.workloads[0].body.get());
-    assert(cond->predicate == "expert_active");
+    assert(cond->predicate_expr == "expert_active");
     assert(cond->then_branch != nullptr);
     assert(cond->else_branch != nullptr);
 
-    std::cout << "  Parsed cond with predicate: " << cond->predicate << "\n";
+    std::cout << "  Parsed cond with predicate: " << cond->predicate_expr << "\n";
 }
 
 // Test: Parse deeply nested structure

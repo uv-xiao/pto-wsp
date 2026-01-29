@@ -4,7 +4,6 @@ Tests for PTO Workload-Schedule Programming (PTO-WSP) framework Python Frontend.
 Tests cover:
 - @workload decorator and P namespace
 - @kernel decorator for JIT kernels
-- NPU function builder
 - Schedule combinator API
 - CSP primitives
 """
@@ -25,8 +24,6 @@ from pto_wsp import (
     MemLayout, TensorLayout, TensorShard, TensorReplicate,
     LayoutIncompatibleError, tensor_layout_join,
     relayout, allreduce, allgather, reduce_scatter,
-    # NPU builder
-    npu, NPUFunction, NPUOpKind,
     # Legacy API
     parallel_for, for_each, select, cond, task, combine, sequential,
     # CSP
@@ -144,123 +141,6 @@ class TestKernelDecorator:
         builder = indexed_kernel[1, 2]
         assert builder.axes == (1, 2)
         assert builder.kernel_ref is indexed_kernel
-
-
-# ============================================================
-# Test NPU Function Builder
-# ============================================================
-
-class TestNPUBuilder:
-    """Tests for NPU function builder."""
-
-    def test_basic_npu_function(self):
-        """Test basic NPU function creation."""
-        func = (npu("test_kernel")
-            .tile("x", 32, 128, dtype=DType.F16)
-            .tile("out", 32, 128, dtype=DType.F16)
-            .memref("input", DType.F16, is_input=True)
-            .memref("output", DType.F16, is_output=True)
-            .load("x", "input")
-            .store("output", "out")
-            .build())
-
-        assert isinstance(func, NPUFunction)
-        assert func.name == "test_kernel"
-        assert len(func.tiles) == 2
-        assert len(func.memrefs) == 2
-        assert len(func.ops) == 2
-
-    def test_rmsnorm_kernel(self):
-        """Test RMSNorm kernel pattern."""
-        func = (npu("rmsnorm")
-            .tile("x", 32, 128, dtype=DType.F16)
-            .tile("out", 32, 128, dtype=DType.F16)
-            .scalar("eps", DType.F32, default=1e-6)
-            .memref("input", DType.F16, is_input=True)
-            .memref("output", DType.F16, is_output=True)
-            .load("x", "input")
-            .mul("sq", "x", "x")
-            .rowmean("mean", "sq")
-            .rsqrt("rsqrt_val", "mean")
-            .rowexpandmul("out", "x", "rsqrt_val")
-            .store("output", "out")
-            .build())
-
-        assert func.name == "rmsnorm"
-        assert len(func.tiles) == 2
-        assert len(func.scalars) == 1
-        # Verify operations
-        op_kinds = [op.kind for op in func.ops]
-        assert NPUOpKind.Load in op_kinds
-        assert NPUOpKind.Mul in op_kinds
-        assert NPUOpKind.RowMean in op_kinds
-        assert NPUOpKind.Rsqrt in op_kinds
-        assert NPUOpKind.Store in op_kinds
-
-    def test_matmul_kernel(self):
-        """Test MatMul kernel with cube flag."""
-        func = (npu("qk_matmul")
-            .tile("q", 32, 64, dtype=DType.F16)
-            .tile("k", 64, 32, dtype=DType.F16)
-            .tile("s", 32, 32, dtype=DType.F16, location=Location.L1)
-            .memref("Q", DType.F16, is_input=True)
-            .memref("K", DType.F16, is_input=True)
-            .memref("S", DType.F16, is_output=True)
-            .load("q", "Q")
-            .load("k", "K")
-            .matmul("s", "q", "k", transpose_b=True)
-            .store("S", "s")
-            .cube()  # Mark as cube kernel
-            .build())
-
-        assert func.name == "qk_matmul"
-        assert func.is_cube == True
-        # Verify matmul operation
-        matmul_ops = [op for op in func.ops if op.kind == NPUOpKind.MatMul]
-        assert len(matmul_ops) == 1
-        assert matmul_ops[0].attrs["transpose_b"] == True
-
-    def test_schedule_hints(self):
-        """Test NPU function schedule hints."""
-        func = (npu("pipelined")
-            .tile("a", 32, 32)
-            .double_buffer()
-            .pipeline(depth=2)
-            .tile_policy("row_major")
-            .build())
-
-        assert func.double_buffer == True
-        assert func.pipeline_depth == 2
-        assert func.tile_policy == "row_major"
-
-    def test_control_flow(self):
-        """Test NPU function control flow."""
-        func = (npu("loop_kernel")
-            .tile("a", 32, 32)
-            .for_loop("i", 0, 4, 1)
-            .load("a", "input")
-            .end_for()
-            .build())
-
-        assert len(func.ops) == 3  # for_begin, load, for_end
-        assert func.ops[0].kind == NPUOpKind.ForLoopBegin
-        assert func.ops[2].kind == NPUOpKind.ForLoopEnd
-
-    def test_to_ir_serialization(self):
-        """Test NPU function IR serialization."""
-        func = (npu("serialize_test")
-            .tile("x", 32, 64, dtype=DType.F16)
-            .scalar("alpha", DType.F32, default=1.0)
-            .memref("input", DType.F16, is_input=True)
-            .load("x", "input")
-            .build())
-
-        ir = func.to_ir()
-        assert ir["name"] == "serialize_test"
-        assert len(ir["tiles"]) == 1
-        assert ir["tiles"][0]["rows"] == 32
-        assert ir["tiles"][0]["cols"] == 64
-        assert ir["scalars"][0]["default"] == 1.0
 
 
 # ============================================================
@@ -388,6 +268,7 @@ class TestScheduleAPI:
 
 class TestExtendedSchedulePrimitives:
     """Tests for extended schedule primitives (R5)."""
+    pytestmark = pytest.mark.skip("Legacy extended schedule primitives removed in codegen-first v9")
 
     def test_dispatch_threshold(self):
         """Test dispatch_threshold for multi-level dispatch."""
@@ -783,30 +664,7 @@ class TestIntegration:
         assert w._stream_count == 2
 
     def test_npu_kernel_integration(self):
-        """Test NPU kernel with workload."""
-        # Define NPU kernel
-        rmsnorm_kernel = (npu("rmsnorm")
-            .tile("x", 32, 128)
-            .load("x", "input")
-            .rowmean("mean", "x")
-            .rsqrt("rsqrt", "mean")
-            .rowexpandmul("out", "x", "rsqrt")
-            .store("output", "out")
-            .build())
-
-        # Use in workload
-        @kernel
-        def rmsnorm(x: In[Tensor], out: Out[Tensor]):
-            # This would reference rmsnorm_kernel in a real implementation
-            pass
-
-        @workload
-        def batch_rmsnorm(batch):
-            for b in P(batch):
-                rmsnorm[b](None, None)
-
-        w = batch_rmsnorm(DenseDyn(4))
-        assert w is not None
+        pytest.skip("Legacy NPU builder removed")
 
 
 # ============================================================
@@ -1291,6 +1149,150 @@ class TestWorkloadLayoutDeprecation:
             assert len(caught) == 1
             assert issubclass(caught[0].category, DeprecationWarning)
             assert "deprecated" in str(caught[0].message).lower()
+
+
+# ============================================================
+# Test Workload Metadata for IR Bridge (Task 13.3)
+# ============================================================
+
+class TestWorkloadMetadata:
+    """Tests for Workload metadata attributes used by IR bridge."""
+
+    def test_workload_has_name_attribute(self):
+        """Test Workload has _name attribute."""
+        w = task("kernel", [], [])
+        assert hasattr(w, '_name')
+        assert w._name is None  # Default is None
+
+    def test_workload_named_method(self):
+        """Test Workload.named() sets name."""
+        w = task("kernel", [], []).named("my_workload")
+        assert w._name == "my_workload"
+
+    def test_workload_named_immutable(self):
+        """Test named() returns new Workload."""
+        w1 = task("kernel", [], [])
+        w2 = w1.named("workload_1")
+        assert w1._name is None
+        assert w2._name == "workload_1"
+
+    def test_workload_has_params_attribute(self):
+        """Test Workload has _params attribute."""
+        w = task("kernel", [], [])
+        assert hasattr(w, '_params')
+        assert w._params == []  # Default is empty list
+
+    def test_workload_with_params_method(self):
+        """Test Workload.with_params() sets parameters."""
+        batch = Dense[4]()
+        heads = Dense[8]()
+        w = task("kernel", [], []).with_params(
+            ("batch", batch),
+            ("heads", heads)
+        )
+        assert len(w._params) == 2
+        assert w._params[0] == ("batch", batch)
+        assert w._params[1] == ("heads", heads)
+
+    def test_workload_with_params_immutable(self):
+        """Test with_params() returns new Workload."""
+        batch = Dense[4]()
+        w1 = task("kernel", [], [])
+        w2 = w1.with_params(("batch", batch))
+        assert w1._params == []
+        assert len(w2._params) == 1
+
+    def test_workload_has_schedule_dataclass(self):
+        """Test Workload has _schedule as Schedule dataclass."""
+        from pto_wsp.workload import Schedule
+        w = task("kernel", [], [])
+        assert hasattr(w, '_schedule')
+        assert isinstance(w._schedule, Schedule)
+
+    def test_schedule_dataclass_defaults(self):
+        """Test Schedule dataclass default values."""
+        from pto_wsp.workload import Schedule
+        s = Schedule()
+        assert s.dispatch is None
+        assert s.streams == 1
+        assert s.stream_by is None
+        assert s.timing is None
+
+    def test_schedule_to_dict(self):
+        """Test Schedule.to_dict() method."""
+        from pto_wsp.workload import Schedule
+        s = Schedule(dispatch="policy", streams=4, timing="immediate")
+        d = s.to_dict()
+        assert "dispatch" in d
+        assert d["dispatch"] == "policy"
+        assert "streams" in d
+        assert d["streams"] == 4
+        assert "timing" in d
+
+    def test_schedule_to_dict_empty_for_defaults(self):
+        """Test Schedule.to_dict() returns empty dict for defaults."""
+        from pto_wsp.workload import Schedule
+        s = Schedule()
+        d = s.to_dict()
+        assert d == {}
+
+    def test_workload_schedule_updated_by_dispatch(self):
+        """Test dispatch() updates _schedule dataclass."""
+        policy = DispatchPolicy.round_robin(4)
+        w = task("kernel", [], []).dispatch(policy)
+        assert w._schedule.dispatch is policy
+        assert w._dispatch_policy is policy  # Legacy attribute also set
+
+    def test_workload_schedule_updated_by_streams(self):
+        """Test streams() updates _schedule dataclass."""
+        w = task("kernel", [], []).streams(4)
+        assert w._schedule.streams == 4
+        assert w._stream_count == 4  # Legacy attribute also set
+
+    def test_workload_schedule_updated_by_stream_by(self):
+        """Test stream_by() updates _schedule dataclass."""
+        fn = lambda t: t.id % 2
+        w = task("kernel", [], []).stream_by(fn)
+        assert w._schedule.stream_by is fn
+        assert w._stream_by_fn is fn  # Legacy attribute also set
+
+    def test_workload_schedule_updated_by_timing(self):
+        """Test timing() updates _schedule dataclass."""
+        timing = TimingPolicy.immediate
+        w = task("kernel", [], []).timing(timing)
+        assert w._schedule.timing is timing
+        assert w._timing_policy is timing  # Legacy attribute also set
+
+    def test_workload_metadata_preserved_in_copy(self):
+        """Test _copy() preserves all metadata."""
+        batch = Dense[4]()
+        w1 = (task("kernel", [], [])
+            .named("test_workload")
+            .with_params(("batch", batch))
+            .dispatch(DispatchPolicy.round_robin(4))
+            .streams(2))
+        w2 = w1._copy()
+        assert w2._name == "test_workload"
+        assert len(w2._params) == 1
+        assert w2._schedule.dispatch is not None
+        assert w2._schedule.streams == 2
+
+    def test_chained_metadata_and_schedule(self):
+        """Test chaining metadata and schedule methods."""
+        batch = Dense[4]()
+        heads = Dense[8]()
+        w = (task("attn", [], [])
+            .named("attention")
+            .with_params(("batch", batch), ("heads", heads))
+            .dispatch(DispatchPolicy.round_robin(4))
+            .streams(2)
+            .timing(TimingPolicy.immediate))
+
+        assert w._name == "attention"
+        assert len(w._params) == 2
+        assert w._schedule.dispatch is not None
+        assert w._schedule.streams == 2
+        assert w._schedule.timing is not None
 
 
 if __name__ == "__main__":

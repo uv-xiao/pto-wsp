@@ -219,7 +219,11 @@ class TestIRBridgeKernelIntegration:
 
 # Only run if C++ bindings available
 if HAS_CPP_BINDINGS:
-    import pto_ir_cpp as cpp
+    # Import using the same strategy as ir_bridge.py
+    try:
+        from pto_wsp import pto_ir_cpp as cpp
+    except ImportError:
+        import pto_ir_cpp as cpp
 
     class TestCppIntegration:
         """Direct C++ integration tests."""

@@ -1,6 +1,6 @@
 // PTO Workload-Schedule Programming (PTO-WSP) framework v9 - Backend Unit Tests
 // Copyright (c) 2026 PTO Project
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: MIT
 
 #include "pto/rt/backend/cpu_sim.hpp"
 #include "pto/rt/backend/codegen.hpp"
@@ -486,6 +486,211 @@ TEST(ascend_codegen_loop) {
     assert(code.find("Exp(") != std::string::npos);
 
     std::cout << "  Ascend codegen loop test passed\n";
+}
+
+// ============================================================
+// CSP Runtime Tests
+// ============================================================
+
+TEST(bounded_channel_basic) {
+    // Test basic buffered channel operations
+    BoundedChannel<int> ch(3);
+
+    // Non-blocking send should succeed
+    assert(ch.try_send(1));
+    assert(ch.try_send(2));
+    assert(ch.try_send(3));
+    assert(!ch.try_send(4));  // Buffer full
+
+    assert(ch.size() == 3);
+    assert(!ch.empty());
+
+    // Receive values
+    auto v1 = ch.try_recv();
+    assert(v1.has_value() && *v1 == 1);
+
+    auto v2 = ch.try_recv();
+    assert(v2.has_value() && *v2 == 2);
+
+    auto v3 = ch.try_recv();
+    assert(v3.has_value() && *v3 == 3);
+
+    assert(ch.empty());
+    assert(!ch.try_recv().has_value());  // Empty
+
+    std::cout << "  BoundedChannel basic tests passed\n";
+}
+
+TEST(bounded_channel_blocking) {
+    // Test blocking send/recv with threads
+    BoundedChannel<int> ch(2);
+    std::atomic<int> sum{0};
+
+    // Producer thread
+    std::thread producer([&ch]() {
+        for (int i = 1; i <= 5; ++i) {
+            ch.send(i);
+        }
+        ch.close();
+    });
+
+    // Consumer thread
+    std::thread consumer([&ch, &sum]() {
+        while (auto v = ch.recv()) {
+            sum.fetch_add(*v);
+        }
+    });
+
+    producer.join();
+    consumer.join();
+
+    // Sum of 1..5 = 15
+    assert(sum.load() == 15);
+
+    std::cout << "  BoundedChannel blocking tests passed (sum=" << sum.load() << ")\n";
+}
+
+TEST(bounded_channel_rendezvous) {
+    // Test rendezvous channel (capacity 0)
+    BoundedChannel<int> ch(0);
+    std::atomic<int> received{0};
+
+    // Consumer thread (starts first, waits for sender)
+    std::thread consumer([&ch, &received]() {
+        for (int i = 0; i < 3; ++i) {
+            auto v = ch.recv();
+            if (v) received.fetch_add(*v);
+        }
+    });
+
+    // Give consumer time to block
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+
+    // Producer sends (each send blocks until consumer receives)
+    std::thread producer([&ch]() {
+        ch.send(10);
+        ch.send(20);
+        ch.send(30);
+        ch.close();
+    });
+
+    producer.join();
+    consumer.join();
+
+    assert(received.load() == 60);
+
+    std::cout << "  BoundedChannel rendezvous tests passed (received=" << received.load() << ")\n";
+}
+
+TEST(channel_registry_basic) {
+    ChannelRegistry registry;
+
+    registry.create_channel("ch1", 5);
+    registry.create_channel("ch2", 0);  // Rendezvous
+
+    assert(registry.has_channel("ch1"));
+    assert(registry.has_channel("ch2"));
+    assert(!registry.has_channel("ch3"));
+
+    auto ch1 = registry.get_channel("ch1");
+    assert(ch1 != nullptr);
+    assert(ch1->capacity() == 5);
+
+    auto ch2 = registry.get_channel("ch2");
+    assert(ch2 != nullptr);
+    assert(ch2->capacity() == 0);
+
+    registry.clear();
+    assert(!registry.has_channel("ch1"));
+
+    std::cout << "  ChannelRegistry basic tests passed\n";
+}
+
+TEST(csp_executor_basic) {
+    ChannelRegistry registry;
+    registry.create_channel("work", 10);
+
+    CSPExecutor executor(registry, 4);
+
+    std::atomic<int> produced{0};
+    std::atomic<int> consumed{0};
+
+    // Add producer
+    auto work_ch = registry.get_channel("work");
+    executor.add_producer("producer", {"work"}, [&work_ch, &produced]() {
+        for (int i = 0; i < 5; ++i) {
+            work_ch->send(static_cast<TaskId>(i));
+            produced.fetch_add(1);
+        }
+        work_ch->close();
+    });
+
+    // Add consumer
+    executor.add_sink("consumer", {"work"}, [&consumed](TaskId tid) {
+        consumed.fetch_add(1);
+    });
+
+    executor.start();
+    executor.wait();
+
+    assert(produced.load() == 5);
+    assert(consumed.load() == 5);
+
+    std::cout << "  CSPExecutor basic tests passed (produced=" << produced.load()
+              << ", consumed=" << consumed.load() << ")\n";
+}
+
+TEST(csp_executor_pipeline) {
+    // Test multi-stage pipeline: producer -> transformer -> sink
+    ChannelRegistry registry;
+    registry.create_channel("stage1", 5);
+    registry.create_channel("stage2", 5);
+
+    CSPExecutor executor(registry, 4);
+
+    std::atomic<int> final_sum{0};
+
+    auto ch1 = registry.get_channel("stage1");
+    auto ch2 = registry.get_channel("stage2");
+
+    // Producer: sends 1, 2, 3
+    executor.add_producer("producer", {"stage1"}, [&ch1]() {
+        for (int i = 1; i <= 3; ++i) {
+            ch1->send(static_cast<TaskId>(i));
+        }
+        ch1->close();
+    });
+
+    // Transformer: doubles values
+    executor.add_consumer("transformer", {"stage1"}, {"stage2"}, [&ch2](TaskId tid) {
+        ch2->send(tid * 2);
+    });
+
+    // Need to close ch2 when transformer is done
+    // For simplicity, close after transformer finishes
+    std::thread closer([&ch1, &ch2]() {
+        // Wait for ch1 to close and drain
+        while (!ch1->is_closed() || !ch1->empty()) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        // Give transformer time to process
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        ch2->close();
+    });
+
+    // Sink: sums values
+    executor.add_sink("sink", {"stage2"}, [&final_sum](TaskId tid) {
+        final_sum.fetch_add(static_cast<int>(tid));
+    });
+
+    executor.start();
+    closer.join();
+    executor.wait();
+
+    // Sum of (1*2 + 2*2 + 3*2) = 2 + 4 + 6 = 12
+    assert(final_sum.load() == 12);
+
+    std::cout << "  CSPExecutor pipeline tests passed (sum=" << final_sum.load() << ")\n";
 }
 
 // ============================================================
