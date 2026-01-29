@@ -1,6 +1,6 @@
 // PTO Workload-Schedule Programming (PTO-WSP) framework v9 - Core IR Infrastructure
 // Copyright (c) 2024 PTO Project
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: MIT
 
 #pragma once
 
@@ -41,6 +41,8 @@ enum class NodeKind {
 
     // Workload nodes
     Task,
+    SlotSetU64,   // Runtime slot write (u64)
+    SlotLoadU64,  // Runtime slot load from tensor (u64)
     ParallelFor,
     ForEach,
     Select,

@@ -1,19 +1,24 @@
 // PTO Workload-Schedule Programming (PTO-WSP) framework v9 - Python Bindings for C++ IR
 // Copyright (c) 2026 PTO Project
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: MIT
 
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 #include <pybind11/functional.h>
 
 #include "pto/rt/ir/ir.hpp"
+#include "pto/rt/ir/codegen.hpp"
+#include "pto/rt/ir/scalar_expr.hpp"
 #include "pto/rt/graph/graph.hpp"
 #include "pto/rt/backend/backend.hpp"
 #include "pto/rt/backend/cpu_sim.hpp"
 #include "pto/rt/backend/ascend_npu.hpp"
+#include "pto/rt/codegen/cmake_compiler.hpp"
 
 namespace py = pybind11;
 using namespace pto::wsp;
+
+void bind_codegen(py::module_& m);
 
 // ============================================================
 // IR Bindings
@@ -100,6 +105,68 @@ void bind_ir(py::module_& m) {
         .value("Abort", ir::TaskWindowOverflowPolicy::Abort)
         .value("Benchmark", ir::TaskWindowOverflowPolicy::Benchmark);
 
+    // ScalarExpr enums (v9)
+    py::enum_<ir::ScalarType>(m, "ScalarType")
+        .value("Bool", ir::ScalarType::Bool)
+        .value("I64", ir::ScalarType::I64)
+        .value("U64", ir::ScalarType::U64);
+
+    py::enum_<ir::ScalarUnaryOp>(m, "ScalarUnaryOp")
+        .value("Not", ir::ScalarUnaryOp::Not)
+        .value("Neg", ir::ScalarUnaryOp::Neg)
+        .value("BitNot", ir::ScalarUnaryOp::BitNot);
+
+    py::enum_<ir::ScalarBinaryOp>(m, "ScalarBinaryOp")
+        .value("Add", ir::ScalarBinaryOp::Add)
+        .value("Sub", ir::ScalarBinaryOp::Sub)
+        .value("Mul", ir::ScalarBinaryOp::Mul)
+        .value("Div", ir::ScalarBinaryOp::Div)
+        .value("Mod", ir::ScalarBinaryOp::Mod)
+        .value("BitAnd", ir::ScalarBinaryOp::BitAnd)
+        .value("BitOr", ir::ScalarBinaryOp::BitOr)
+        .value("BitXor", ir::ScalarBinaryOp::BitXor)
+        .value("Shl", ir::ScalarBinaryOp::Shl)
+        .value("Shr", ir::ScalarBinaryOp::Shr)
+        .value("Lt", ir::ScalarBinaryOp::Lt)
+        .value("Le", ir::ScalarBinaryOp::Le)
+        .value("Gt", ir::ScalarBinaryOp::Gt)
+        .value("Ge", ir::ScalarBinaryOp::Ge)
+        .value("Eq", ir::ScalarBinaryOp::Eq)
+        .value("Ne", ir::ScalarBinaryOp::Ne)
+        .value("And", ir::ScalarBinaryOp::And)
+        .value("Or", ir::ScalarBinaryOp::Or);
+
+    // ScalarExpr base type (opaque handle)
+    py::class_<ir::ScalarExprNode, ir::ScalarExpr>(m, "ScalarExpr")
+        .def_property_readonly("type", [](const ir::ScalarExprNode& self) { return self.type; })
+        .def("print", [](const ir::ScalarExprNode& self) {
+            std::ostringstream oss;
+            self.print(oss);
+            return oss.str();
+        });
+
+    // ScalarExpr constructors (preferred over exposing individual node classes)
+    m.def("scalar_lit_bool", [](bool v) { return ir::lit_bool(v); });
+    m.def("scalar_lit_i64", [](int64_t v) { return ir::lit_i64(v); });
+    m.def("scalar_lit_u64", [](uint64_t v) { return ir::lit_u64(v); });
+    m.def("scalar_task_param", [](uint32_t i, ir::ScalarType t) { return ir::task_param(i, t); },
+          py::arg("index"), py::arg("type") = ir::ScalarType::I64);
+    m.def("scalar_task_tag_u64", [](uint64_t id) { return ir::task_tag_u64(id); });
+    m.def("scalar_axis_var", [](uint64_t id, ir::ScalarType t) { return ir::axis_var(id, t); },
+          py::arg("axis_id"), py::arg("type") = ir::ScalarType::I64);
+    m.def("scalar_symbol_u64", [](uint64_t id) { return ir::symbol_u64(id); });
+    m.def("scalar_slot_u64", [](uint32_t i) { return ir::slot_u64(i); });
+    m.def("scalar_slot_i64", [](uint32_t i) { return ir::slot_i64(i); });
+    m.def("scalar_slot_bool", [](uint32_t i) { return ir::slot_bool(i); });
+    m.def("scalar_unary", [](ir::ScalarUnaryOp op, ir::ScalarExpr e, ir::ScalarType t) { return ir::unary(op, std::move(e), t); });
+    m.def("scalar_binary", [](ir::ScalarBinaryOp op, ir::ScalarExpr a, ir::ScalarExpr b, ir::ScalarType t) {
+        return ir::binary(op, std::move(a), std::move(b), t);
+    });
+    m.def("scalar_ternary", [](ir::ScalarExpr c, ir::ScalarExpr t, ir::ScalarExpr f, ir::ScalarType ty) {
+        return ir::ternary(std::move(c), std::move(t), std::move(f), ty);
+    });
+    m.def("scalar_cast", [](ir::ScalarType to, ir::ScalarExpr e) { return ir::cast(to, std::move(e)); });
+
     // Shape struct
     py::class_<ir::Shape>(m, "Shape")
         .def(py::init<>())
@@ -127,6 +194,63 @@ void bind_ir(py::module_& m) {
         .def_readwrite("element_type", &ir::ChannelType::element_type)
         .def_readwrite("capacity", &ir::ChannelType::capacity)
         .def("to_string", &ir::ChannelType::to_string);
+
+    // ------------------------------------------------------------
+    // Codegen structs (module-attached, v9 formal inputs)
+    // ------------------------------------------------------------
+
+    py::class_<ir::CodegenIndexExpr>(m, "CodegenIndexExpr")
+        .def(py::init<>())
+        .def_readwrite("is_var", &ir::CodegenIndexExpr::is_var)
+        .def_readwrite("var", &ir::CodegenIndexExpr::var)
+        .def_readwrite("constant", &ir::CodegenIndexExpr::constant);
+
+    py::class_<ir::CodegenAxisArg>(m, "CodegenAxisArg")
+        .def(py::init<>())
+        .def_readwrite("is_var", &ir::CodegenAxisArg::is_var)
+        .def_readwrite("var", &ir::CodegenAxisArg::var)
+        .def_readwrite("u64", &ir::CodegenAxisArg::u64);
+
+    py::class_<ir::CodegenTensorArg>(m, "CodegenTensorArg")
+        .def(py::init<>())
+        .def_readwrite("param", &ir::CodegenTensorArg::param)
+        .def_readwrite("tensor_id", &ir::CodegenTensorArg::tensor_id)
+        .def_readwrite("base_rank", &ir::CodegenTensorArg::base_rank)
+        .def_readwrite("view_rank", &ir::CodegenTensorArg::view_rank)
+        .def_readwrite("index_exprs", &ir::CodegenTensorArg::index_exprs);
+
+    py::class_<ir::CodegenTensorInfo>(m, "CodegenTensorInfo")
+        .def(py::init<>())
+        .def_readwrite("dtype", &ir::CodegenTensorInfo::dtype)
+        .def_readwrite("shape", &ir::CodegenTensorInfo::shape);
+
+    py::class_<ir::CodegenKernelValueInfo>(m, "CodegenKernelValueInfo")
+        .def(py::init<>())
+        .def_readwrite("dtype", &ir::CodegenKernelValueInfo::dtype)
+        .def_readwrite("has_shape", &ir::CodegenKernelValueInfo::has_shape)
+        .def_readwrite("rows", &ir::CodegenKernelValueInfo::rows)
+        .def_readwrite("cols", &ir::CodegenKernelValueInfo::cols);
+
+    py::class_<ir::CodegenKernelParamInfo>(m, "CodegenKernelParamInfo")
+        .def(py::init<>())
+        .def_readwrite("name", &ir::CodegenKernelParamInfo::name)
+        .def_readwrite("id", &ir::CodegenKernelParamInfo::id);
+
+    py::class_<ir::CodegenKernelOpInfo>(m, "CodegenKernelOpInfo")
+        .def(py::init<>())
+        .def_readwrite("kind", &ir::CodegenKernelOpInfo::kind)
+        .def_readwrite("has_result", &ir::CodegenKernelOpInfo::has_result)
+        .def_readwrite("result", &ir::CodegenKernelOpInfo::result)
+        .def_readwrite("operands", &ir::CodegenKernelOpInfo::operands)
+        .def_readwrite("attrs", &ir::CodegenKernelOpInfo::attrs);
+
+    py::class_<ir::CodegenKernelDef>(m, "CodegenKernelDef")
+        .def(py::init<>())
+        .def_readwrite("name", &ir::CodegenKernelDef::name)
+        .def_readwrite("params", &ir::CodegenKernelDef::params)
+        .def_readwrite("values", &ir::CodegenKernelDef::values)
+        .def_readwrite("ops", &ir::CodegenKernelDef::ops)
+        .def_readwrite("attrs", &ir::CodegenKernelDef::attrs);
 
     // IRNode base class (using shared_ptr for proper sharing)
     py::class_<ir::IRNode, std::shared_ptr<ir::IRNode>>(m, "IRNode")
@@ -163,7 +287,20 @@ void bind_ir(py::module_& m) {
     py::class_<ir::TaskNode, ir::WorkloadNode, std::shared_ptr<ir::TaskNode>>(m, "TaskNode")
         .def_readonly("kernel_name", &ir::TaskNode::kernel_name)
         .def_readonly("params", &ir::TaskNode::params)
-        .def_readonly("resources", &ir::TaskNode::resources);
+        .def_readonly("resources", &ir::TaskNode::resources)
+        .def_readonly("axis_args", &ir::TaskNode::axis_args)
+        .def_readonly("scalar_args", &ir::TaskNode::scalar_args)
+        .def_readonly("tensor_args", &ir::TaskNode::tensor_args);
+
+    py::class_<ir::SlotSetU64Node, ir::WorkloadNode, std::shared_ptr<ir::SlotSetU64Node>>(m, "SlotSetU64Node")
+        .def_readonly("slot", &ir::SlotSetU64Node::slot)
+        .def_readonly("value", &ir::SlotSetU64Node::value);
+
+    py::class_<ir::SlotLoadU64Node, ir::WorkloadNode, std::shared_ptr<ir::SlotLoadU64Node>>(m, "SlotLoadU64Node")
+        .def_readonly("slot", &ir::SlotLoadU64Node::slot)
+        .def_readonly("tensor", &ir::SlotLoadU64Node::tensor)
+        .def_readonly("row", &ir::SlotLoadU64Node::row)
+        .def_readonly("col", &ir::SlotLoadU64Node::col);
 
     py::class_<ir::ParallelForNode, ir::WorkloadNode, std::shared_ptr<ir::ParallelForNode>>(m, "ParallelForNode")
         .def_readonly("axis", &ir::ParallelForNode::axis)
@@ -194,6 +331,30 @@ void bind_ir(py::module_& m) {
     py::class_<ir::CallNode, ir::WorkloadNode, std::shared_ptr<ir::CallNode>>(m, "CallNode")
         .def_readonly("target_name", &ir::CallNode::target_name)
         .def_readonly("args", &ir::CallNode::args);
+
+    // CSP nodes
+    py::class_<ir::ChannelNode, ir::IRNode, std::shared_ptr<ir::ChannelNode>>(m, "ChannelNode")
+        .def_readonly("name", &ir::ChannelNode::name)
+        .def_readonly("type", &ir::ChannelNode::type);
+
+    py::class_<ir::ProcessNode, ir::WorkloadNode, std::shared_ptr<ir::ProcessNode>>(m, "ProcessNode")
+        .def_readonly("name", &ir::ProcessNode::name)
+        .def_readonly("consumes", &ir::ProcessNode::consumes)
+        .def_readonly("produces", &ir::ProcessNode::produces)
+        .def_readonly("body", &ir::ProcessNode::body);
+
+    py::class_<ir::SendNode, ir::WorkloadNode, std::shared_ptr<ir::SendNode>>(m, "SendNode")
+        .def_readonly("channel_name", &ir::SendNode::channel_name)
+        .def_readonly("value", &ir::SendNode::value);
+
+    py::class_<ir::ConsumeNode, ir::WorkloadNode, std::shared_ptr<ir::ConsumeNode>>(m, "ConsumeNode")
+        .def_readonly("channel_name", &ir::ConsumeNode::channel_name)
+        .def_readonly("value_var", &ir::ConsumeNode::value_var)
+        .def_readonly("body", &ir::ConsumeNode::body);
+
+    py::class_<ir::PipelineNode, ir::WorkloadNode, std::shared_ptr<ir::PipelineNode>>(m, "PipelineNode")
+        .def_readonly("channels", &ir::PipelineNode::channels)
+        .def_readonly("processes", &ir::PipelineNode::processes);
 
     // ScheduleNode hierarchy
     py::class_<ir::ScheduleNode, ir::IRNode, std::shared_ptr<ir::ScheduleNode>>(m, "ScheduleNode");
@@ -282,6 +443,8 @@ void bind_ir(py::module_& m) {
         .def_readwrite("name", &ir::Module::name)
         .def_readwrite("version", &ir::Module::version)
         .def_readwrite("targets", &ir::Module::targets)
+        .def_readwrite("tensors", &ir::Module::tensors)
+        .def_readwrite("kernels", &ir::Module::kernels)
         .def_readwrite("workloads", &ir::Module::workloads)
         .def_readwrite("schedules", &ir::Module::schedules)
         .def("find_workload", &ir::Module::findWorkload, py::return_value_policy::reference)
@@ -315,6 +478,22 @@ void bind_ir(py::module_& m) {
                                const std::vector<std::string>& resources) {
             return f.create<ir::TaskNode>(kernel, params, resources);
         })
+        .def("create_slot_set_u64", [](ir::IRFactory& f, uint32_t slot, uint64_t value) {
+            return f.create<ir::SlotSetU64Node>(slot, value);
+        })
+        .def("create_slot_load_u64", [](ir::IRFactory& f, uint32_t slot,
+                                        const ir::CodegenTensorArg& tensor,
+                                        int64_t row, int64_t col) {
+            return f.create<ir::SlotLoadU64Node>(slot, tensor, row, col);
+        })
+        .def("create_task_codegen", [](ir::IRFactory& f, const std::string& kernel,
+                                       const std::vector<std::string>& params,
+                                       const std::vector<std::string>& resources,
+                                       const std::vector<ir::CodegenAxisArg>& axis_args,
+                                       const std::vector<ir::CodegenAxisArg>& scalar_args,
+                                       const std::vector<ir::CodegenTensorArg>& tensor_args) {
+            return f.create<ir::TaskNode>(kernel, params, resources, axis_args, scalar_args, tensor_args);
+        })
         .def("create_parallel_for", [](ir::IRFactory& f,
                                        ir::IRPtr<ir::AxisNode> axis,
                                        const std::string& var,
@@ -334,11 +513,12 @@ void bind_ir(py::module_& m) {
             return f.create<ir::SelectNode>(sparse, var, body);
         })
         .def("create_cond", [](ir::IRFactory& f,
-                               const std::string& predicate,
+                               const std::string& predicate_expr,
+                               ir::ScalarExpr predicate,
                                ir::IRPtr<ir::WorkloadNode> then_branch,
                                ir::IRPtr<ir::WorkloadNode> else_branch) {
-            return f.create<ir::CondNode>(predicate, then_branch, else_branch);
-        })
+            return f.create<ir::CondNode>(predicate_expr, std::move(predicate), then_branch, else_branch);
+        }, py::arg("predicate_expr"), py::arg("predicate") = nullptr, py::arg("then_branch"), py::arg("else_branch"))
         .def("create_combine", [](ir::IRFactory& f,
                                   const std::vector<ir::IRPtr<ir::WorkloadNode>>& workloads) {
             return f.create<ir::CombineNode>(workloads);
@@ -351,13 +531,40 @@ void bind_ir(py::module_& m) {
                                const std::vector<std::string>& args) {
             return f.create<ir::CallNode>(target, args);
         })
+        .def("create_channel", [](ir::IRFactory& f, const std::string& name, int64_t capacity) {
+            ir::Shape s;
+            ir::TensorType tt{s, ir::DType::U64, ir::Location::Global};
+            ir::ChannelType ct{tt, capacity};
+            return f.create<ir::ChannelNode>(name, ct);
+        }, py::arg("name"), py::arg("capacity") = 0)
+        .def("create_process", [](ir::IRFactory& f, const std::string& name,
+                                  const std::vector<std::string>& consumes,
+                                  const std::vector<std::string>& produces,
+                                  ir::IRPtr<ir::WorkloadNode> body) {
+            return f.create<ir::ProcessNode>(name, consumes, produces, body);
+        })
+        .def("create_send", [](ir::IRFactory& f, const std::string& channel,
+                               ir::IRPtr<ir::WorkloadNode> value) {
+            return f.create<ir::SendNode>(channel, value);
+        })
+        .def("create_consume", [](ir::IRFactory& f, const std::string& channel,
+                                  const std::string& value_var,
+                                  ir::IRPtr<ir::WorkloadNode> body) {
+            return f.create<ir::ConsumeNode>(channel, value_var, body);
+        })
+        .def("create_pipeline", [](ir::IRFactory& f,
+                                   const std::vector<ir::IRPtr<ir::ChannelNode>>& channels,
+                                   const std::vector<ir::IRPtr<ir::ProcessNode>>& processes) {
+            return f.create<ir::PipelineNode>(channels, processes);
+        })
         .def("create_dispatch", [](ir::IRFactory& f, ir::DispatchPolicy policy,
-                                   int num_targets, const std::string& key_expr) {
-            return f.create<ir::DispatchNode>(policy, num_targets, key_expr);
-        })
-        .def("create_stream", [](ir::IRFactory& f, int num_streams, const std::string& key_expr) {
-            return f.create<ir::StreamNode>(num_streams, key_expr);
-        })
+                                   int num_targets, const std::string& key_expr,
+                                   ir::ScalarExpr key) {
+            return f.create<ir::DispatchNode>(policy, num_targets, key_expr, std::move(key));
+        }, py::arg("policy"), py::arg("num_targets") = 0, py::arg("key_expr") = "", py::arg("key") = nullptr)
+        .def("create_stream", [](ir::IRFactory& f, int num_streams, const std::string& key_expr, ir::ScalarExpr key) {
+            return f.create<ir::StreamNode>(num_streams, key_expr, std::move(key));
+        }, py::arg("num_streams"), py::arg("key_expr") = "", py::arg("key") = nullptr)
         .def("create_timing", [](ir::IRFactory& f, ir::TimingPolicy policy, int param) {
             return f.create<ir::TimingNode>(policy, param);
         })
@@ -581,13 +788,22 @@ void bind_backend(py::module_& m) {
     // Compile function
     m.def("compile", &backend::compile, py::arg("module"), py::arg("options") = backend::CompileOptions{});
 
-    // NPU IR bindings for codegen testing
-    // NOTE: NPUModule/NPUFunction removed from C++ IR (L11).
-    // Kernel compilation now happens in Python (python/pto_wsp/kernel.py).
-    // The JIT kernel decorator traces Python functions to produce typed IR,
-    // then generates backend code. C++ only sees compiled kernel code strings.
+    // v9 formal artifact build entrypoint (C++ invokes CMake; no Python-spawned compiler).
+    m.def(
+        "compile_sources_via_cmake",
+        [](const std::map<std::string, std::string>& sources, const std::string& output_name) {
+            auto r = codegen::compile_sources_via_cmake(sources, output_name);
+            py::dict out;
+            out["so_path"] = r.so_path;
+            out["cache_key"] = r.cache_key;
+            return out;
+        },
+        py::arg("sources"),
+        py::arg("output_name"));
 
-    // AscendNPUBackend - accepts pre-compiled kernel code from Python JIT
+    // Ascend NPU backend (v9): codegen-first path (host/AICPU/AICore) is under
+    // active development. The backend remains present for API completeness,
+    // but CPU-sim is the only executable target in this environment.
     py::class_<backend::ascend::AscendNPUBackend, backend::Backend,
                std::unique_ptr<backend::ascend::AscendNPUBackend>>(m, "AscendNPUBackend")
         .def(py::init<>())
@@ -605,6 +821,7 @@ PYBIND11_MODULE(pto_ir_cpp, m) {
     bind_ir(m);
     bind_graph(m);
     bind_backend(m);
+    bind_codegen(m);
 
     // Version info
     m.attr("__version__") = "0.9.0";

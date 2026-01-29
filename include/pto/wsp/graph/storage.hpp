@@ -1,5 +1,5 @@
 // Copyright 2026 PTO-RT Authors
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: MIT
 
 #pragma once  // API-2 FIX: Consistent include guard style
 // (was: #ifndef PTO_WSP_GRAPH_STORAGE_HPP)
@@ -292,4 +292,3 @@ private:
 };
 
 }  // namespace pto::wsp::graph
-

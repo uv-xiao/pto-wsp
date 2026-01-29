@@ -329,17 +329,19 @@ class PNamespace:
 
             from pto_wsp.workload import Workload
 
-            # Build conditional workload
+            # Build conditional workload with an explicit empty else branch by default.
+            # `P.otherwise()` may overwrite the else branch by mutating the stored workload.
             then_body = self._build_body(frame.then_body)
-            else_body = None
-            if frame.else_body:
-                else_body = self._build_body(frame.else_body)
+            else_body = Workload("empty")
 
-            workload = Workload("cond",
-                               predicate=predicate,
-                               then_workload=then_body,
-                               else_workload=else_body)
-            builder.add_child(workload)
+            w = Workload(
+                "cond",
+                predicate=predicate,
+                then_workload=then_body,
+                else_workload=else_body,
+            )
+            builder.add_child(w)
+            builder._pending_cond_workload = w
 
     @contextmanager
     def otherwise(self):
@@ -355,18 +357,22 @@ class PNamespace:
         if builder is None:
             raise RuntimeError("P.otherwise() used outside @workload context")
 
-        # The current frame should be the previous conditional
-        frame = builder.current_frame()
-        if not isinstance(frame, ConditionalFrame):
+        pending = getattr(builder, "_pending_cond_workload", None)
+        if pending is None or not hasattr(pending, "_kind") or pending._kind != "cond":
             raise RuntimeError("P.otherwise() must follow P.when()")
 
-        # Switch to else body
-        frame.else_body = []
+        # Collect else branch under a conditional frame, but only the else side.
+        frame = ConditionalFrame(predicate=None, then_body=[], else_body=[])
+        builder.push_frame(frame)
 
         try:
             yield
         finally:
-            pass  # Frame will be popped by the when() context manager
+            builder.pop_frame()
+
+            # Replace else branch of the most-recently-built cond workload.
+            pending._kwargs["else_workload"] = self._build_body(frame.else_body or [])
+            builder._pending_cond_workload = None
 
     def _build_body(self, children: list) -> Any:
         from pto_wsp.workload import Workload

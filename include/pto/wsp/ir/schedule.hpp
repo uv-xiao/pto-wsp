@@ -1,10 +1,11 @@
 // PTO Workload-Schedule Programming (PTO-WSP) framework v9 - Schedule IR Nodes
 // Copyright (c) 2024 PTO Project
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: MIT
 
 #pragma once
 
 #include "core.hpp"
+#include "scalar_expr.hpp"
 
 namespace pto::wsp::ir {
 
@@ -22,13 +23,16 @@ struct DispatchNode : ScheduleNode {
     const DispatchPolicy policy;
     const int num_targets;       // For RoundRobin
     const std::string key_expr;  // For Affinity, Hash, Custom
+    const ScalarExpr key;        // Structured form (v9): schedule keys must not be string-eval.
 
     DispatchNode(NodeId id, DispatchPolicy policy, int num_targets = 0,
-                 std::string key_expr = "")
+                 std::string key_expr = "",
+                 ScalarExpr key = nullptr)
         : ScheduleNode(id, NodeKind::Dispatch, WorkloadLevel::CPU),
           policy(policy),
           num_targets(num_targets),
-          key_expr(std::move(key_expr)) {}
+          key_expr(std::move(key_expr)),
+          key(std::move(key)) {}
 
     void print(std::ostream& os, int indent) const override {
         os << std::string(indent, ' ') << "dispatch = ";
@@ -56,11 +60,13 @@ struct DispatchNode : ScheduleNode {
 struct StreamNode : ScheduleNode {
     const int num_streams;
     const std::string key_expr;  // For stream_by (empty = single stream)
+    const ScalarExpr key;        // Structured form (v9).
 
-    StreamNode(NodeId id, int num_streams, std::string key_expr = "")
+    StreamNode(NodeId id, int num_streams, std::string key_expr = "", ScalarExpr key = nullptr)
         : ScheduleNode(id, NodeKind::Stream, WorkloadLevel::CPU),
           num_streams(num_streams),
-          key_expr(std::move(key_expr)) {}
+          key_expr(std::move(key_expr)),
+          key(std::move(key)) {}
 
     void print(std::ostream& os, int indent) const override {
         os << std::string(indent, ' ') << "streams = " << num_streams;

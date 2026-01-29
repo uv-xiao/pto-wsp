@@ -1,6 +1,6 @@
 // PTO Workload-Schedule Programming (PTO-WSP) framework v9 - Module IR
 // Copyright (c) 2024 PTO Project
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: MIT
 
 #pragma once
 
@@ -9,6 +9,7 @@
 #include "workload.hpp"
 #include "schedule.hpp"
 #include "csp.hpp"
+#include "codegen.hpp"
 
 namespace pto::wsp::ir {
 
@@ -85,6 +86,11 @@ struct Module {
     std::string name;
     std::string version = "9.0";
     std::vector<std::string> targets;  // cpu_sim, ascend_npu, amd_aie
+
+    // Codegen data (v9): tensors and kernels attached to the module so codegen
+    // can be driven from C++ IR (no Python plan dict as primary input).
+    std::vector<CodegenTensorInfo> tensors;
+    std::vector<CodegenKernelDef> kernels;
 
     std::vector<WorkloadDef> workloads;
     std::vector<ScheduleDef> schedules;

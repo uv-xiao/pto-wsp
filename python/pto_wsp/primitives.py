@@ -69,11 +69,11 @@ def select(sparse: Any, body: Callable[[int], Any]) -> Workload:
     return Workload("select", sparse=sparse, body=body)
 
 
-def cond(predicate: bool, then_workload: Any, else_workload: Any) -> Workload:
+def cond(predicate: Any, then_workload: Any, else_workload: Any) -> Workload:
     """Conditional workload selection.
 
     Args:
-        predicate: Runtime condition
+        predicate: Runtime predicate (v9: ScalarExpr or convertible literal)
         then_workload: Workload if predicate is true
         else_workload: Workload if predicate is false
 
@@ -90,23 +90,28 @@ def cond(predicate: bool, then_workload: Any, else_workload: Any) -> Workload:
                     else_workload=else_workload)
 
 
-def task(kernel: str, params: list[Any], resources: list[Any]) -> Workload:
+def task(kernel: Any, params: list[Any], resources: Any) -> Workload:
     """Single kernel invocation (leaf workload).
 
-    Args:
-        kernel: Kernel name (string)
-        params: Kernel parameters
-        resources: Input/output tensors
+    This function supports two modes:
 
-    Returns:
-        Workload with None dependency type
+    1) Legacy enumerate-only mode (no codegen): `kernel` is a `str` name and
+       `resources` is a positional `list` of tensors/values.
 
-    Example:
-        t = task("attention_kernel", [batch, head, seq_len], [Q, K, V, O])
+    2) Codegen-first mode: `kernel` is a `@kernel` object and `resources` is a
+       `dict[param_name -> Tensor/scalar]` matching the kernel signature.
+
+    Returns a `Workload("task", ...)` node. When invoked inside a `@workload`
+    builder loop, the task is also added to the builder.
     """
     from pto_wsp.builder import get_current_builder
 
-    w = Workload("task", kernel=kernel, params=params, resources=resources)
+    if kernel is not None and hasattr(kernel, "trace") and hasattr(kernel, "name"):
+        if not isinstance(resources, dict):
+            raise TypeError("task(kernel=@kernel, ...) requires resources=dict[param_name -> Tensor/scalar]")
+        w = Workload("task", kernel=kernel, params=params, resources=resources)
+    else:
+        w = Workload("task", kernel=str(kernel), params=params, resources=list(resources))
 
     # If inside a @workload context with P loops, add to builder
     builder = get_current_builder()
@@ -152,3 +157,33 @@ def sequential(*workloads: Any) -> Workload:
             parallel_for(batch, lambda b: task("store", [b], [...])))
     """
     return Workload("sequential", workloads=list(workloads))
+
+
+def slot_set_u64(slot: int, value: int) -> Workload:
+    """Write a runtime u64 slot (side effect).
+
+    Slots live inside codegen-first artifacts and can be used by ScalarExpr
+    predicates/keys (v9) to enable data-dependent control.
+    """
+    from pto_wsp.builder import get_current_builder
+
+    w = Workload("slot_set_u64", slot=int(slot), value=int(value) & 0xFFFFFFFFFFFFFFFF)
+    builder = get_current_builder()
+    if builder is not None:
+        builder.add_child(w)
+    return w
+
+
+def slot_load_u64(slot: int, tensor: Any, row: int = 0, col: int = 0) -> Workload:
+    """Load a u64 value from a tensor element into a runtime slot (side effect).
+
+    The tensor must be a `pto_wsp.types.Tensor` view that resolves to a 2D tile
+    view (last two dims). `row/col` are indices within that tile view.
+    """
+    from pto_wsp.builder import get_current_builder
+
+    w = Workload("slot_load_u64", slot=int(slot), tensor=tensor, row=int(row), col=int(col))
+    builder = get_current_builder()
+    if builder is not None:
+        builder.add_child(w)
+    return w

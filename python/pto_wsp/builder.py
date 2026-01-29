@@ -33,6 +33,96 @@ class ConditionalFrame:
     else_body: Optional[list[Any]] = None
 
 
+@dataclass
+class KernelParam:
+    """Structured kernel parameter with direction and type info.
+
+    This dataclass captures complete type information for kernel parameters,
+    enabling type checking and code generation.
+
+    Attributes:
+        name: Parameter name in the kernel signature
+        direction: "in", "out", or "inout"
+        inner_type: The underlying type (TileType, ScalarType, etc.)
+        dtype: Data type (F16, F32, etc.)
+        shape: Shape tuple for tiles, None for scalars
+
+    Example:
+        # For a parameter: x: In[Tile[32, 128, F16]]
+        KernelParam(
+            name="x",
+            direction="in",
+            inner_type=TileType(32, 128, DType.F16),
+            dtype=DType.F16,
+            shape=(32, 128)
+        )
+    """
+    name: str
+    direction: str  # "in", "out", "inout", "constexpr"
+    inner_type: Any  # TileType, ScalarType, or actual type
+    dtype: Any = None  # DType if known
+    shape: Optional[tuple] = None  # (rows, cols) for tiles
+
+
+def extract_kernel_params(func: Callable) -> list[KernelParam]:
+    """Extract structured kernel parameters from function type hints.
+
+    Parses type hints like In[Tile[32, 128, F16]] into KernelParam objects.
+
+    Args:
+        func: Kernel function with type annotations
+
+    Returns:
+        List of KernelParam objects describing each parameter
+    """
+    from pto_wsp.types import DType
+    from pto_wsp.kernel import TileType, ScalarType
+
+    params = []
+    hints = get_type_hints(func) if hasattr(func, '__annotations__') else {}
+    sig = inspect.signature(func)
+
+    for param_name in sig.parameters:
+        if param_name == 'return':
+            continue
+
+        hint = hints.get(param_name)
+        if hint is None:
+            # No type hint - create basic param
+            params.append(KernelParam(name=param_name, direction="in", inner_type=None))
+            continue
+
+        # Check for direction markers (In, Out, InOut, Constexpr)
+        direction = "in"
+        inner_type = hint
+
+        # Check class attributes from _DirectionMeta
+        if hasattr(hint, '_direction'):
+            direction = hint._direction
+        if hasattr(hint, '_inner_type'):
+            inner_type = hint._inner_type
+
+        # Extract dtype and shape from inner_type
+        dtype = None
+        shape = None
+
+        if isinstance(inner_type, TileType):
+            dtype = inner_type.dtype
+            shape = (inner_type.rows, inner_type.cols)
+        elif isinstance(inner_type, ScalarType):
+            dtype = inner_type.dtype
+
+        params.append(KernelParam(
+            name=param_name,
+            direction=direction,
+            inner_type=inner_type,
+            dtype=dtype,
+            shape=shape
+        ))
+
+    return params
+
+
 class WorkloadBuilder:
     """Stack-based workload builder.
 
@@ -44,6 +134,7 @@ class WorkloadBuilder:
         self.name = name
         self.frames: list[LoopFrame | ConditionalFrame] = []
         self.root_children: list[Any] = []
+        self._pending_cond_workload: Any | None = None
         self._var_counter = 0
         # Type checking integration
         self._type_check = type_check
@@ -280,6 +371,9 @@ class Kernel:
         if hasattr(func, '__annotations__'):
             self._signature = func.__annotations__.copy()
 
+        # Structured parameter info (direction + dtype/shape) for codegen.
+        self._kernel_params: list[KernelParam] = extract_kernel_params(func)
+
         functools.update_wrapper(self, func)
 
     @property
@@ -301,28 +395,29 @@ class Kernel:
             sig = inspect.signature(self.func)
             param_values = {}
 
-            for i, (name, param) in enumerate(sig.parameters.items()):
-                # Get type annotation
-                ann = self._signature.get(name)
+            params_by_name = {p.name: p for p in self._kernel_params}
 
-                # Create Value based on annotation or actual arg
-                if i < len(args):
-                    arg = args[i]
-                    if isinstance(arg, Value):
-                        val = arg
-                    elif isinstance(arg, TileType):
-                        val = Value.tile(arg.rows, arg.cols, arg.dtype, arg.location, name)
-                    else:
-                        # Default: infer from annotation or use default tile
-                        val = Value.tile(32, 128, DType.F16, name=name)
-                else:
+            for name in sig.parameters:
+                meta = params_by_name.get(name)
+                if meta is None or meta.inner_type is None:
                     val = Value.tile(32, 128, DType.F16, name=name)
+                else:
+                    if isinstance(meta.inner_type, TileType) and meta.shape is not None:
+                        rows, cols = meta.shape
+                        val = Value.tile(rows, cols, meta.dtype or DType.F16, meta.inner_type.location, name)
+                    elif isinstance(meta.inner_type, ScalarType):
+                        val = Value.scalar(meta.dtype or DType.F32, name=name)
+                    else:
+                        # Unknown inner type (e.g., plain Python scalar) - represent as scalar.
+                        val = Value.scalar(DType.F32, name=name)
 
                 param_values[name] = val
                 ir.params.append((name, val))
 
-            # Execute function with Value parameters
-            self.func(**param_values)
+            # Execute function with Value parameters unless this kernel provides
+            # an explicit C++ implementation.
+            if self.options.get("cpp_src") is None and self.options.get("cpp_file_src") is None:
+                self.func(**param_values)
 
         finally:
             kernel_tl._current_ir = None
@@ -334,28 +429,10 @@ class Kernel:
         return self._trace(**kwargs)
 
     def compile(self, target: str = "ascend", **kwargs) -> CompiledKernel:
-        """Compile kernel for target backend."""
-        # Create specialization key from kwargs
-        spec_key = (target, tuple(sorted(kwargs.items())))
-
-        if spec_key in self._compiled_cache:
-            return self._compiled_cache[spec_key]
-
-        # Trace to get IR
-        ir = self._trace(**kwargs)
-
-        # Generate code for target
-        code = self._generate_code(ir, target)
-
-        compiled = CompiledKernel(
-            name=self.name,
-            ir=ir,
-            target=target,
-            code=code,
-            metadata=kwargs
+        raise RuntimeError(
+            "Kernel.compile() is not supported in v9 codegen-first mode. "
+            "Use workload.compile() to build codegen artifacts from C++ IR."
         )
-        self._compiled_cache[spec_key] = compiled
-        return compiled
 
     def _generate_code(self, ir: KernelIR, target: str) -> str:
         """Generate backend code from IR."""
@@ -454,10 +531,19 @@ class Kernel:
             if builder._type_checker:
                 builder.check_kernel_call(self, (), kwargs)
 
+            # Preserve argument-to-parameter mapping for codegen.
+            sig = inspect.signature(self.func)
+            param_names = [n for n in sig.parameters.keys() if n != "return"]
+            resources: dict[str, Any] = {}
+            for i, arg in enumerate(args):
+                if i < len(param_names):
+                    resources[param_names[i]] = arg
+            resources.update(kwargs)
+
             task = Workload("task",
-                          kernel=self.name,
+                          kernel=self,
                           params=[],
-                          resources=list(args) + list(kwargs.values()))
+                          resources=resources)
             builder.add_child(task)
             return task
         else:
@@ -490,10 +576,18 @@ class _KernelCallWithAxes:
             if builder._type_checker:
                 builder.check_kernel_call(self.kernel, self.axes, kwargs)
 
+            sig = inspect.signature(self.kernel.func)
+            param_names = [n for n in sig.parameters.keys() if n != "return"]
+            resources: dict[str, Any] = {}
+            for i, arg in enumerate(args):
+                if i < len(param_names):
+                    resources[param_names[i]] = arg
+            resources.update(kwargs)
+
             task = Workload("task",
-                          kernel=self.kernel.name,
+                          kernel=self.kernel,
                           params=list(self.axes),
-                          resources=list(args) + list(kwargs.values()))
+                          resources=resources)
             builder.add_child(task)
             return task
         else:
@@ -501,7 +595,12 @@ class _KernelCallWithAxes:
 
 
 def kernel(func: Callable = None, *, num_warps: int = 4,
-           num_stages: int = 2, **kwargs) -> Kernel:
+           num_stages: int = 2,
+           cpp_src: str | None = None,
+           cpp_body_path: str | None = None,
+           cpp_tu_path: str | None = None,
+           cpp_includes: Optional[list[str]] = None,
+           **kwargs) -> Kernel:
     """Unified kernel decorator with JIT support.
 
     This decorator creates kernels that:
@@ -530,7 +629,31 @@ def kernel(func: Callable = None, *, num_warps: int = 4,
             for b in P(batch):
                 gemm_tile[b](a=A[b], b=B[b], c=C[b])
     """
+    import os
+
     options = {"num_warps": num_warps, "num_stages": num_stages, **kwargs}
+
+    if cpp_src is not None and (cpp_body_path is not None or cpp_tu_path is not None):
+        raise ValueError("kernel(): use only one of cpp_src / cpp_body_path / cpp_tu_path")
+
+    if cpp_body_path is not None and cpp_tu_path is not None:
+        raise ValueError("kernel(): use only one of cpp_body_path / cpp_tu_path")
+
+    if cpp_body_path is not None:
+        p = os.path.abspath(os.path.expanduser(str(cpp_body_path)))
+        with open(p, "r", encoding="utf-8") as f:
+            options["cpp_src"] = f.read()
+        options["cpp_src_path"] = p
+    elif cpp_tu_path is not None:
+        p = os.path.abspath(os.path.expanduser(str(cpp_tu_path)))
+        with open(p, "r", encoding="utf-8") as f:
+            options["cpp_file_src"] = f.read()
+        options["cpp_file_path"] = p
+    elif cpp_src is not None:
+        options["cpp_src"] = str(cpp_src)
+
+    if cpp_includes is not None:
+        options["cpp_includes"] = [str(x) for x in cpp_includes]
 
     def decorator(fn: Callable) -> Kernel:
         return Kernel(fn, **options)
@@ -549,28 +672,115 @@ KernelRef = Kernel
 T = TypeVar("T")
 
 
-class In:
-    """Input tensor annotation for kernel parameters."""
-    def __class_getitem__(cls, item):
-        return f"In[{item}]"
+class _DirectionMeta(type):
+    """Metaclass that enables subscript syntax and stores type info."""
+
+    def __getitem__(cls, item):
+        """Support Foo[Type] syntax, returning a special annotated type."""
+        # Create a new class that remembers both the direction and inner type
+        class_name = f"{cls.__name__}[{item}]"
+
+        # Create a new class that carries the type information
+        new_cls = type(class_name, (cls,), {
+            '_inner_type': item,
+            '_direction': cls.__name__.lower(),
+        })
+        return new_cls
 
 
-class Out:
-    """Output tensor annotation for kernel parameters."""
-    def __class_getitem__(cls, item):
-        return f"Out[{item}]"
+class In(metaclass=_DirectionMeta):
+    """Input tensor annotation for kernel parameters.
+
+    Marks a parameter as read-only input.
+
+    Usage:
+        @kernel
+        def my_kernel(x: In[Tile[32, 32, F32]]): ...
+
+    The type can be introspected:
+        hint = In[Tile[32, 32, F32]]
+        hint._inner_type  # Tile[32, 32, F32]
+        hint._direction   # "in"
+    """
+    _inner_type = None
+    _direction = "in"
 
 
-class InOut:
-    """In-place tensor annotation for kernel parameters."""
-    def __class_getitem__(cls, item):
-        return f"InOut[{item}]"
+class Out(metaclass=_DirectionMeta):
+    """Output tensor annotation for kernel parameters.
+
+    Marks a parameter as write-only output.
+
+    Usage:
+        @kernel
+        def my_kernel(y: Out[Tile[32, 32, F32]]): ...
+    """
+    _inner_type = None
+    _direction = "out"
 
 
-class Constexpr:
-    """Compile-time constant annotation for kernel parameters."""
-    def __class_getitem__(cls, item):
-        return f"Constexpr[{item}]"
+class InOut(metaclass=_DirectionMeta):
+    """In-place tensor annotation for kernel parameters.
+
+    Marks a parameter as read-write (in-place modification).
+
+    Usage:
+        @kernel
+        def my_kernel(x: InOut[Tile[32, 32, F32]]): ...
+    """
+    _inner_type = None
+    _direction = "inout"
+
+
+class Constexpr(metaclass=_DirectionMeta):
+    """Compile-time constant annotation for kernel parameters.
+
+    Marks a parameter as a compile-time constant value.
+
+    Usage:
+        @kernel
+        def my_kernel(tile_size: Constexpr[int]): ...
+    """
+    _inner_type = None
+    _direction = "constexpr"
+
+
+def get_direction(hint) -> str:
+    """Extract direction from a type hint.
+
+    Args:
+        hint: Type hint like In[Tile[...]] or Out[Tile[...]]
+
+    Returns:
+        Direction string: "in", "out", "inout", "constexpr", or "unknown"
+    """
+    if hasattr(hint, '_direction'):
+        return hint._direction
+    # Handle string annotations for backward compatibility
+    if isinstance(hint, str):
+        if hint.startswith("In["):
+            return "in"
+        elif hint.startswith("Out["):
+            return "out"
+        elif hint.startswith("InOut["):
+            return "inout"
+        elif hint.startswith("Constexpr["):
+            return "constexpr"
+    return "unknown"
+
+
+def get_inner_type(hint):
+    """Extract inner type from a direction-annotated type hint.
+
+    Args:
+        hint: Type hint like In[Tile[...]]
+
+    Returns:
+        Inner type (e.g., Tile[...]) or None
+    """
+    if hasattr(hint, '_inner_type'):
+        return hint._inner_type
+    return None
 
 
 # Import DType for type inference in tracing

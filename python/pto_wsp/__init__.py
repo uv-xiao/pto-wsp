@@ -9,7 +9,7 @@ Typed workload expressions for dynamic LLM workloads with:
 - NPU function builder: npu("name").tile(...).load(...).build()
 """
 
-__version__ = "0.9.0"
+__version__ = "0.1.0"
 
 # ============================================================
 # Import order matters - import decorator functions LAST
@@ -20,7 +20,7 @@ __version__ = "0.9.0"
 # Axis types
 # ============================================================
 
-from pto_wsp.types import Dense, DenseDyn, Ragged, Sparse
+from pto_wsp.types import Dense, DenseDyn, Ragged, Sparse, Symbol
 
 # ============================================================
 # Legacy workload primitives (still available)
@@ -34,6 +34,8 @@ from pto_wsp.primitives import (
     task,
     combine,
     sequential,
+    slot_set_u64,
+    slot_load_u64,
 )
 
 # ============================================================
@@ -60,16 +62,10 @@ from pto_wsp.csp import (
 
 from pto_wsp.schedule import (
     DispatchPolicy,
-    IssuePolicy,
     TimingPolicy,
-    # Extended schedule primitives (R5)
-    WindowMode,
-    GateScope,
-    DispatchThreshold,
-    PipelineDepth,
-    TaskWindow,
-    BatchDeps,
     # Task graph primitives (R9)
+    WindowMode,
+    TaskWindow,
     DepsMode,
     Deps,
     ReadyPolicy,
@@ -80,10 +76,12 @@ from pto_wsp.schedule import (
 )
 
 # ============================================================
-# Spatial primitives
+# Spatial primitives (legacy module removed - use TensorShard/TensorReplicate)
 # ============================================================
 
-from pto_wsp.spatial import Shard, Replicate
+# Legacy: Shard/Replicate are now aliases for TensorShard/TensorReplicate
+# This maintains backward compatibility without the deprecated module
+from pto_wsp.types import TensorShard as Shard, TensorReplicate as Replicate
 
 # ============================================================
 # Tensor and types
@@ -113,32 +111,6 @@ from pto_wsp.program import (
     TraceLevel,
     TraceEvent,
     ExecutionTrace,
-)
-
-# ============================================================
-# Kernel registration (DEPRECATED - use @kernel or @jit_kernel)
-# ============================================================
-
-from pto_wsp.kernel_legacy import register_kernel, ExternalKernel
-
-# ============================================================
-# NPU Function Builder (DEPRECATED - use @jit_kernel with tl.*)
-# String-based builder retained for backward compatibility.
-# New code should use @jit_kernel with typed Value objects.
-# ============================================================
-
-from pto_wsp.npu import (
-    npu,               # DEPRECATED: NPU function builder entry point
-    NPUFunction,       # NPU function IR (for internal use)
-    NPUFunctionBuilder,
-    NPUOpKind,
-    TileDecl,
-    ScalarDecl,
-    MemrefDecl,
-    # Composite operations (DEPRECATED)
-    rmsnorm,
-    softmax,
-    layer_norm,
 )
 
 # ============================================================
@@ -179,7 +151,7 @@ from pto_wsp.p_namespace import P
 # ============================================================
 
 from pto_wsp.kernel import (
-    tl,  # Triton-style tile language primitives
+    pto,  # PTO tile language primitives
     Value,
     TileType,
     ScalarType,
@@ -189,6 +161,12 @@ from pto_wsp.kernel import (
     CompiledKernel,
     OpKind,
 )
+
+# ============================================================
+# PTO-ISA kernel authoring (Python -> C++ emission)
+# ============================================================
+
+from pto_wsp.ptoisa_jit import ptoisa, ptoisa_kernel
 
 # ============================================================
 # NEW: @workload decorator + unified @kernel decorator (RECOMMENDED - R11)
@@ -202,6 +180,10 @@ from pto_wsp.builder import (
     KernelRef,  # Alias for Kernel (backward compat)
     In, Out, InOut,
     Constexpr,
+    KernelParam,
+    extract_kernel_params,
+    get_direction,
+    get_inner_type,
 )
 
 # Create proper names for export
@@ -222,6 +204,8 @@ __all__ = [
     # NEW: @workload + P namespace (RECOMMENDED)
     "workload",
     "kernel",
+    "ptoisa",
+    "ptoisa_kernel",
     "KernelRef",
     "P",
     "In", "Out", "InOut", "Constexpr",
@@ -240,6 +224,8 @@ __all__ = [
     "task",
     "combine",
     "sequential",
+    "slot_set_u64",
+    "slot_load_u64",
 
     # CSP primitives
     "Channel",
@@ -256,16 +242,10 @@ __all__ = [
 
     # Schedule policies
     "DispatchPolicy",
-    "IssuePolicy",
     "TimingPolicy",
-    # Extended schedule primitives (R5)
-    "WindowMode",
-    "GateScope",
-    "DispatchThreshold",
-    "PipelineDepth",
-    "TaskWindow",
-    "BatchDeps",
     # Task graph primitives (R9)
+    "WindowMode",
+    "TaskWindow",
     "DepsMode",
     "Deps",
     "ReadyPolicy",
@@ -306,25 +286,9 @@ __all__ = [
     "TraceEvent",
     "ExecutionTrace",
 
-    # Kernel (DEPRECATED - use @kernel or @jit_kernel)
-    "register_kernel",  # DEPRECATED
-    "ExternalKernel",   # DEPRECATED, unused
-
-    # NPU Function Builder (DEPRECATED - use @jit_kernel with tl.* instead)
-    "npu",              # DEPRECATED: string-based builder
-    "NPUFunction",      # Internal use only
-    "NPUFunctionBuilder",
-    "NPUOpKind",
-    "TileDecl",
-    "ScalarDecl",
-    "MemrefDecl",
-    "rmsnorm",          # DEPRECATED composite
-    "softmax",          # DEPRECATED composite
-    "layer_norm",       # DEPRECATED composite
-
     # JIT Kernel Programming (L3 - now unified with @kernel)
     "jit_kernel",  # Backward compat alias for @kernel
-    "tl",  # Triton-style tile language primitives
+    "pto",  # PTO tile language primitives
     "Value",
     "TileType",
     "ScalarType",
@@ -348,6 +312,10 @@ __all__ = [
     "check_kernel_call",
     "check_layouts_compatible",
     "validate_axis_index",
+
+    # Kernel Parameter Extraction
+    "KernelParam",
+    "extract_kernel_params",
 
     # C++ IR bindings (pybind11)
     "cpp",
@@ -388,6 +356,7 @@ __all__.extend([
 
 from pto_wsp.ir_bridge import (
     workload_to_ir,
+    workload_to_codegen_ir,
     module_to_string,
     parse_ir_string,
     IRBridgeError,
@@ -396,38 +365,11 @@ from pto_wsp.ir_bridge import (
 
 __all__.extend([
     "workload_to_ir",
+    "workload_to_codegen_ir",
     "module_to_string",
     "parse_ir_string",
     "IRBridgeError",
     "HAS_CPP_BINDINGS",
-])
-
-# ============================================================
-# IR Pass Infrastructure
-# ============================================================
-
-from pto_wsp.ir_passes import (
-    Pass,
-    FunctionPass,
-    PassManager,
-    PatternRewriter,
-    RewritePattern,
-    IdentityPass,
-    PrintPass,
-    FlattenCombinePass,
-    pass_func,
-)
-
-__all__.extend([
-    "Pass",
-    "FunctionPass",
-    "PassManager",
-    "PatternRewriter",
-    "RewritePattern",
-    "IdentityPass",
-    "PrintPass",
-    "FlattenCombinePass",
-    "pass_func",
 ])
 
 # ============================================================
@@ -450,6 +392,36 @@ __all__.extend([
     "ExplorationResult",
     "ExplorationSummary",
     "auto_schedule",
+])
+
+# ============================================================
+# Exception Hierarchy (Task 16.3)
+# ============================================================
+
+from pto_wsp.errors import (
+    PtoError,
+    CompileError,
+    TypeCheckError,
+    IRConversionError,
+    ExecutionError,
+    KernelError,
+    ScheduleError,
+    ChannelError,
+    ChannelClosed,
+    ChannelFull,
+)
+
+__all__.extend([
+    "PtoError",
+    "CompileError",
+    "TypeCheckError",
+    "IRConversionError",
+    "ExecutionError",
+    "KernelError",
+    "ScheduleError",
+    "ChannelError",
+    "ChannelClosed",
+    "ChannelFull",
 ])
 
 # ============================================================

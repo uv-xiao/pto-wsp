@@ -1,6 +1,6 @@
 // PTO Workload-Schedule Programming (PTO-WSP) framework v9 - IR Parser Implementation
 // Copyright (c) 2024 PTO Project
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: MIT
 
 #include "pto/rt/ir/parser.hpp"
 #include <fstream>
@@ -415,7 +415,7 @@ IRPtr<WorkloadNode> Parser::parseStatement() {
         expect(TokenType::LBrace, "Expected '{' for else branch");
         auto elseBranch = parseWorkloadBody();
         expect(TokenType::RBrace, "Expected '}' after else branch");
-        return factory_.create<CondNode>(pred.value, thenBranch, elseBranch);
+        return factory_.create<CondNode>(pred.value, nullptr, thenBranch, elseBranch);
     }
 
     if (match(TokenType::KwCombine)) {

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(pto-wsp VERSION 0.9.0 LANGUAGES CXX)
+project(pto-wsp VERSION 0.1.0 LANGUAGES CXX)
 
 # C++23 required
 set(CMAKE_CXX_STANDARD 23)
@@ -42,11 +42,17 @@ file(GLOB_RECURSE PTO_WSP_BACKEND_SOURCES
     "src/pto/rt/backend/*.cpp"
 )
 
+# Codegen / artifact building utilities (v9 formal pipeline)
+file(GLOB_RECURSE PTO_WSP_CODEGEN_SOURCES
+    "src/pto/rt/codegen/*.cpp"
+)
+
 # Combine all sources
 set(PTO_WSP_SOURCES
     ${PTO_WSP_IR_SOURCES}
     ${PTO_WSP_GRAPH_SOURCES}
     ${PTO_WSP_BACKEND_SOURCES}
+    ${PTO_WSP_CODEGEN_SOURCES}
 )
 
 # Create library - STATIC if sources exist, INTERFACE otherwise
@@ -57,6 +63,10 @@ if(PTO_WSP_SOURCES)
         $<INSTALL_INTERFACE:include>
     )
     target_compile_features(pto-wsp-ir PUBLIC cxx_std_23)
+    target_compile_definitions(pto-wsp-ir PUBLIC
+        PTO_WSP_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
+        PTO_ISA_PATH="${PTO_ISA_PATH}"
+    )
     # Enable PIC for use with Python bindings
     set_property(TARGET pto-wsp-ir PROPERTY POSITION_INDEPENDENT_CODE ON)
     message(STATUS "Building pto-wsp-ir as STATIC library with sources: ${PTO_WSP_SOURCES}")
@@ -107,11 +117,26 @@ if(PTO_WSP_BUILD_PYTHON)
     if(pybind11_FOUND)
         message(STATUS "Found pybind11: ${pybind11_VERSION}")
 
-        pybind11_add_module(pto_ir_cpp src/python/pto_ir_bindings.cpp)
+        pybind11_add_module(pto_ir_cpp
+            src/python/pto_ir_bindings.cpp
+            src/python/pto_codegen.cpp
+        )
         target_link_libraries(pto_ir_cpp PRIVATE pto-wsp-ir)
         target_include_directories(pto_ir_cpp PRIVATE
             ${CMAKE_SOURCE_DIR}/include
             ${PTO_ISA_PATH}/include
+        )
+        target_compile_definitions(pto_ir_cpp PRIVATE
+            PTO_WSP_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
+            PTO_ISA_PATH="${PTO_ISA_PATH}"
+        )
+
+        # Copy built module to python/pto_wsp/ for development
+        add_custom_command(TARGET pto_ir_cpp POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy
+                $<TARGET_FILE:pto_ir_cpp>
+                ${CMAKE_SOURCE_DIR}/python/pto_wsp/$<TARGET_FILE_NAME:pto_ir_cpp>
+            COMMENT "Copying pto_ir_cpp to python/pto_wsp/ for development"
         )
 
         # Install Python module to the Python package directory

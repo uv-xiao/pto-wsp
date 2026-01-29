@@ -1,6 +1,6 @@
 // PTO Workload-Schedule Programming (PTO-WSP) framework v9 - IR Main Header
 // Copyright (c) 2024 PTO Project
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: MIT
 
 #pragma once
 
@@ -42,6 +42,8 @@ inline const char* nodeKindToString(NodeKind kind) {
         case NodeKind::RaggedAxis: return "RaggedAxis";
         case NodeKind::SparseAxis: return "SparseAxis";
         case NodeKind::Task: return "Task";
+        case NodeKind::SlotSetU64: return "SlotSetU64";
+        case NodeKind::SlotLoadU64: return "SlotLoadU64";
         case NodeKind::ParallelFor: return "ParallelFor";
         case NodeKind::ForEach: return "ForEach";
         case NodeKind::Select: return "Select";

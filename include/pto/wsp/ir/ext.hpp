@@ -1,6 +1,6 @@
 // PTO Workload-Schedule Programming (PTO-WSP) framework v9 - Extension Mechanism
 // Copyright (c) 2024 PTO Project
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: MIT
 
 #pragma once
 

@@ -4,16 +4,22 @@ JAX/Triton-Style JIT Kernel Programming for PTO Workload-Schedule Programming (P
 This module replaces the string-based NPU function builder with typed IR.
 Inspired by Triton's @triton.jit and JAX's @jax.jit patterns.
 
-Example (NEW API - no string refs):
-    @pto.kernel
-    def rmsnorm(x: In[Tile[32, 128, F16]],
-                out: Out[Tile[32, 128, F16]],
-                eps: Scalar[F32] = 1e-6):
-        # Typed values - no string names!
-        sq = tl.mul(x, x)              # returns Value
-        mean = tl.rowmean(sq)          # returns Value
-        rsqrt_val = tl.rsqrt(mean)     # returns Value
-        tl.store(out, tl.mul(x, rsqrt_val))
+Example (Recommended API using pto namespace):
+    from pto_wsp import kernel, In, Out, Tile, Scalar, pto, DType
+
+    @kernel
+    def rmsnorm(x: In[Tile[32, 128, DType.F16]],
+                out: Out[Tile[32, 128, DType.F16]],
+                eps: Scalar[DType.F32] = 1e-6):
+        # Typed values using pto.* primitives
+        sq = pto.mul(x, x)              # returns Value
+        mean = pto.rowmean(sq)          # returns Value
+        rsqrt_val = pto.rsqrt(mean)     # returns Value
+        pto.store(out, pto.mul(x, rsqrt_val))
+
+Note:
+    The `tl` namespace is a legacy alias for `pto` and is DEPRECATED.
+    Please migrate to `pto.*` primitives for new code.
 """
 
 from __future__ import annotations
@@ -36,7 +42,9 @@ __all__ = [
     "jit_kernel", "kernel",
     # Type annotations
     "In", "Out", "InOut", "Tile", "Scalar", "Constexpr",
-    # Tile language primitives (tl.*)
+    # Tile language primitives (pto.* - recommended)
+    "pto",
+    # Legacy alias (tl.* - deprecated, use pto.*)
     "tl",
     # Compiled kernel
     "CompiledKernel", "KernelIR",
@@ -219,7 +227,6 @@ class OpKind(Enum):
 
     # Special
     Constant = auto()
-    TopK = auto()
     Sin = auto()
     Cos = auto()
 
@@ -228,6 +235,11 @@ class OpKind(Enum):
     ForEnd = auto()
     IfBegin = auto()
     IfEnd = auto()
+
+    # PTO-ISA helpers (v9)
+    IotaU32 = auto()
+    TSort32 = auto()
+    ExtractTopkIndices = auto()
 
 
 @dataclass
@@ -477,7 +489,8 @@ class _TileLanguage:
         """Row-wise sum reduction."""
         self._check_tracing()
         rows = x.shape[0] if x.shape else 1
-        result = Value(ValueId.next(), x.dtype, (rows, 1))
+        out_dtype = DType.F32 if x.dtype == DType.F16 else x.dtype
+        result = Value(ValueId.next(), out_dtype, (rows, 1))
         self._current_ir.add_op(OpKind.RowSum, [x], result)
         return result
 
@@ -485,7 +498,8 @@ class _TileLanguage:
         """Row-wise max reduction."""
         self._check_tracing()
         rows = x.shape[0] if x.shape else 1
-        result = Value(ValueId.next(), x.dtype, (rows, 1))
+        out_dtype = DType.F32 if x.dtype == DType.F16 else x.dtype
+        result = Value(ValueId.next(), out_dtype, (rows, 1))
         self._current_ir.add_op(OpKind.RowMax, [x], result)
         return result
 
@@ -493,7 +507,8 @@ class _TileLanguage:
         """Row-wise mean reduction."""
         self._check_tracing()
         rows = x.shape[0] if x.shape else 1
-        result = Value(ValueId.next(), x.dtype, (rows, 1))
+        out_dtype = DType.F32 if x.dtype == DType.F16 else x.dtype
+        result = Value(ValueId.next(), out_dtype, (rows, 1))
         self._current_ir.add_op(OpKind.RowMean, [x], result)
         return result
 
@@ -501,7 +516,8 @@ class _TileLanguage:
         """Column-wise sum reduction."""
         self._check_tracing()
         cols = x.shape[1] if x.shape else 1
-        result = Value(ValueId.next(), x.dtype, (1, cols))
+        out_dtype = DType.F32 if x.dtype == DType.F16 else x.dtype
+        result = Value(ValueId.next(), out_dtype, (1, cols))
         self._current_ir.add_op(OpKind.ColSum, [x], result)
         return result
 
@@ -509,7 +525,8 @@ class _TileLanguage:
         """Column-wise max reduction."""
         self._check_tracing()
         cols = x.shape[1] if x.shape else 1
-        result = Value(ValueId.next(), x.dtype, (1, cols))
+        out_dtype = DType.F32 if x.dtype == DType.F16 else x.dtype
+        result = Value(ValueId.next(), out_dtype, (1, cols))
         self._current_ir.add_op(OpKind.ColMax, [x], result)
         return result
 
@@ -556,7 +573,19 @@ class _TileLanguage:
         # Output shape: (a.rows, b.cols)
         rows = a.shape[0] if a.shape else 32
         cols = b.shape[1] if b.shape else 32
-        result = Value(ValueId.next(), a.dtype, (rows, cols))
+        # DType rules (v9 direction):
+        # - f16 @ f16 accumulates to f32
+        # - f32 @ f32 stays f32
+        # - other dtypes are not yet supported by the Python frontend
+        if a.dtype == DType.F16 and b.dtype == DType.F16:
+            out_dtype = DType.F32
+        else:
+            out_dtype = a.dtype
+
+        if acc is not None and acc.dtype != out_dtype:
+            raise TypeError(f"matmul acc dtype mismatch: acc={acc.dtype} out={out_dtype}")
+
+        result = Value(ValueId.next(), out_dtype, (rows, cols))
         operands = [a, b] if acc is None else [a, b, acc]
         self._current_ir.add_op(OpKind.Matmul, operands, result)
         return result
@@ -572,17 +601,6 @@ class _TileLanguage:
         self._check_tracing()
         result = Value.scalar(dtype, name=f"const_{value}")
         self._current_ir.add_op(OpKind.Constant, [], result, value=value)
-        return result
-
-    def topk(self, x: Value, k: int, pad_to: int = None) -> Value:
-        """Top-K selection.
-
-        Example:
-            indices = tl.topk(scores, k=8)
-        """
-        self._check_tracing()
-        result = Value(ValueId.next(), DType.I32, (k, 1))  # Returns indices
-        self._current_ir.add_op(OpKind.TopK, [x], result, k=k, pad_to=pad_to)
         return result
 
     def sin(self, x: Value) -> Value:
@@ -608,9 +626,112 @@ class _TileLanguage:
         """Element-wise minimum (alias for minimum)."""
         return self.minimum(a, b)
 
+    # === Slice and Interleave Operations (for RoPE) ===
 
-# Global tl instance for Triton-style usage
-tl = _TileLanguage()
+    def slice_even(self, x: Value) -> Value:
+        """Extract even-indexed elements along the last dimension.
+
+        Used in RoPE (Rotary Position Embedding) computations.
+
+        Example:
+            x_even = pto.slice_even(x)  # x[:, 0::2]
+        """
+        self._check_tracing()
+        rows = x.shape[0] if x.shape else 32
+        cols = (x.shape[1] // 2) if x.shape else 64
+        result = Value(ValueId.next(), x.dtype, (rows, cols))
+        self._current_ir.add_op(OpKind.Constant, [x], result, slice_type="even")
+        return result
+
+    def slice_odd(self, x: Value) -> Value:
+        """Extract odd-indexed elements along the last dimension.
+
+        Used in RoPE (Rotary Position Embedding) computations.
+
+        Example:
+            x_odd = pto.slice_odd(x)  # x[:, 1::2]
+        """
+        self._check_tracing()
+        rows = x.shape[0] if x.shape else 32
+        cols = (x.shape[1] // 2) if x.shape else 64
+        result = Value(ValueId.next(), x.dtype, (rows, cols))
+        self._current_ir.add_op(OpKind.Constant, [x], result, slice_type="odd")
+        return result
+
+    def interleave(self, a: Value, b: Value) -> Value:
+        """Interleave two tensors along the last dimension.
+
+        Used to reconstruct tensor after RoPE transformation.
+
+        Example:
+            result = pto.interleave(new_even, new_odd)  # Combine even/odd back
+        """
+        self._check_tracing()
+        rows = a.shape[0] if a.shape else 32
+        cols = (a.shape[1] * 2) if a.shape else 128
+        result = Value(ValueId.next(), a.dtype, (rows, cols))
+        self._current_ir.add_op(OpKind.Constant, [a, b], result, op_type="interleave")
+        return result
+
+    def broadcast(self, x: Value, shape: tuple) -> Value:
+        """Broadcast tensor to target shape.
+
+        Example:
+            weight = pto.broadcast(weights_tile, (TILE_SIZE, HIDDEN_DIM))
+        """
+        self._check_tracing()
+        result = Value(ValueId.next(), x.dtype, shape)
+        self._current_ir.add_op(OpKind.Constant, [x], result, broadcast_shape=shape)
+        return result
+
+    # === PTO-ISA helpers (v9) ===
+
+    def iota_u32(self, cols: int) -> Value:
+        """Create a [1,cols] u32 tile with values [0..cols-1]."""
+        self._check_tracing()
+        c = int(cols)
+        if c <= 0:
+            raise ValueError("iota_u32: cols must be > 0")
+        result = Value(ValueId.next(), DType.U32, (1, c))
+        self._current_ir.add_op(OpKind.IotaU32, [], result, cols=c)
+        return result
+
+    def tsort32(self, scores: Value, idx: Value) -> Value:
+        """PTO-ISA TSORT32 helper.
+
+        - scores: f32 tile [1,32]
+        - idx: u32 tile [1,32]
+        - returns: f32 tile [1,64] (score,index pairs; index stored as f32)
+        """
+        self._check_tracing()
+        if scores.shape != (1, 32) or scores.dtype != DType.F32:
+            raise ValueError("tsort32: scores must be Tile[1,32,F32]")
+        if idx.shape != (1, 32) or idx.dtype != DType.U32:
+            raise ValueError("tsort32: idx must be Tile[1,32,U32]")
+        result = Value(ValueId.next(), DType.F32, (1, 64))
+        self._current_ir.add_op(OpKind.TSort32, [scores, idx], result)
+        return result
+
+    def extract_topk_indices(self, pairs: Value, k: int) -> Value:
+        """Extract top-k indices from TSORT32 pairs into an i32 tile [1,k]."""
+        self._check_tracing()
+        kk = int(k)
+        if pairs.shape != (1, 64) or pairs.dtype != DType.F32:
+            raise ValueError("extract_topk_indices: pairs must be Tile[1,64,F32] from tsort32")
+        if kk <= 0 or kk > 32:
+            raise ValueError("extract_topk_indices: k must be in [1,32]")
+        result = Value(ValueId.next(), DType.I32, (1, kk))
+        self._current_ir.add_op(OpKind.ExtractTopkIndices, [pairs], result, k=kk)
+        return result
+
+
+# Global pto instance for tile language operations (PTO-style API)
+# This is the recommended namespace for kernel programming
+pto = _TileLanguage()
+
+# Legacy alias: tl is DEPRECATED, use pto instead
+# Kept for backward compatibility but will emit deprecation warnings in future
+tl = pto
 
 
 # ============================================================
@@ -693,28 +814,10 @@ class JITKernel:
         return ir
 
     def compile(self, target: str = "ascend", **kwargs) -> CompiledKernel:
-        """Compile kernel for target backend."""
-        # Create specialization key from kwargs
-        spec_key = (target, tuple(sorted(kwargs.items())))
-
-        if spec_key in self._compiled_cache:
-            return self._compiled_cache[spec_key]
-
-        # Trace to get IR
-        ir = self._trace(**kwargs)
-
-        # Generate code for target
-        code = self._generate_code(ir, target)
-
-        compiled = CompiledKernel(
-            name=self.name,
-            ir=ir,
-            target=target,
-            code=code,
-            metadata=kwargs
+        raise RuntimeError(
+            "Kernel.compile() is not supported in v9 codegen-first mode. "
+            "Use workload.compile() to build codegen artifacts from C++ IR."
         )
-        self._compiled_cache[spec_key] = compiled
-        return compiled
 
     def _generate_code(self, ir: KernelIR, target: str) -> str:
         """Generate backend code from IR."""

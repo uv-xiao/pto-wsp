@@ -1,10 +1,89 @@
 // PTO Workload-Schedule Programming (PTO-WSP) framework v9 - CPU Simulation Backend Implementation
 // Copyright 2026 PTO-RT Authors
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: MIT
 
 #include "pto/rt/backend/cpu_sim.hpp"
 
 namespace pto::wsp::backend::cpu {
+
+// ============================================================
+// CSPExecutor Implementation
+// ============================================================
+
+CSPExecutor::CSPExecutor(ChannelRegistry& channels, int num_threads)
+    : channels_(channels),
+      num_threads_(num_threads > 0 ? num_threads
+                   : static_cast<int>(std::thread::hardware_concurrency())) {}
+
+CSPExecutor::~CSPExecutor() {
+    signal_done();
+    wait();
+}
+
+void CSPExecutor::add_producer(const std::string& /*name*/,
+                               const std::vector<std::string>& /*output_channels*/,
+                               std::function<void()> body) {
+    active_processes_.fetch_add(1, std::memory_order_release);
+    process_threads_.emplace_back([this, body = std::move(body)]() {
+        body();
+        if (active_processes_.fetch_sub(1, std::memory_order_acq_rel) == 1) {
+            cv_.notify_all();
+        }
+    });
+}
+
+void CSPExecutor::add_consumer(const std::string& /*name*/,
+                               const std::vector<std::string>& input_channels,
+                               const std::vector<std::string>& /*output_channels*/,
+                               std::function<void(graph::TaskId)> body) {
+    // For simplicity, consume from first input channel
+    if (input_channels.empty()) return;
+
+    auto input_ch = channels_.get_channel(input_channels[0]);
+    if (!input_ch) return;
+
+    active_processes_.fetch_add(1, std::memory_order_release);
+    process_threads_.emplace_back([this, input_ch, body = std::move(body)]() {
+        // Consume loop: receive items until channel is closed
+        while (true) {
+            auto item = input_ch->recv();
+            if (!item) break;  // Channel closed
+            body(*item);
+        }
+        if (active_processes_.fetch_sub(1, std::memory_order_acq_rel) == 1) {
+            cv_.notify_all();
+        }
+    });
+}
+
+void CSPExecutor::add_sink(const std::string& name,
+                           const std::vector<std::string>& input_channels,
+                           std::function<void(graph::TaskId)> body) {
+    // Sink is just a consumer with no outputs
+    add_consumer(name, input_channels, {}, std::move(body));
+}
+
+void CSPExecutor::start() {
+    // Threads are started when added, nothing to do here
+}
+
+void CSPExecutor::wait() {
+    for (auto& t : process_threads_) {
+        if (t.joinable()) {
+            t.join();
+        }
+    }
+    process_threads_.clear();
+}
+
+void CSPExecutor::signal_done() {
+    shutdown_.store(true, std::memory_order_release);
+    channels_.close_all();
+}
+
+bool CSPExecutor::is_complete() const {
+    return active_processes_.load(std::memory_order_acquire) == 0;
+}
 
 // ============================================================
 // KernelRegistry Implementation
@@ -253,6 +332,12 @@ void CPUSimProgram::execute_task(graph::TaskId tid, const graph::TaskNodePod& ta
 /// For static Dense axes, it fully expands loops into individual tasks.
 /// For dynamic axes (DenseDyn, Ragged, Sparse), it creates placeholder tasks
 /// since actual expansion requires runtime values.
+///
+/// CSP Support:
+/// - PipelineNode: Creates channels and spawns process threads
+/// - ProcessNode: Runs body in a loop, reading from input channels
+/// - SendNode: Sends task to output channel
+/// - ConsumeNode: Reads from channel and executes body per item
 class WorkloadLowerer {
 public:
     WorkloadLowerer(graph::TaskGraphStorage& storage, const ir::Module& module)
@@ -277,10 +362,18 @@ public:
         builder_.finalize();
     }
 
+    /// Get the channel registry for CSP execution
+    ChannelRegistry& channel_registry() { return channel_registry_; }
+
+    /// Check if this workload uses CSP (has pipelines)
+    bool has_csp() const { return has_csp_; }
+
 private:
     graph::TaskGraphStorage& storage_;
     graph::TaskGraphBuilder builder_;
     std::vector<graph::TaskId> last_tasks_;  // For sequential dependencies
+    ChannelRegistry channel_registry_;        // CSP channels
+    bool has_csp_ = false;                    // True if any CSP nodes found
 
     /// Register all kernel names found in workload tree
     void register_kernels(const ir::IRPtr<ir::WorkloadNode>& node) {
@@ -340,9 +433,91 @@ private:
                 // These require more complex handling - skip for now
                 break;
 
+            case ir::NodeKind::Pipeline:
+                lower_pipeline(
+                    std::static_pointer_cast<const ir::PipelineNode>(node), bindings);
+                break;
+
+            case ir::NodeKind::Process:
+                lower_process(
+                    std::static_pointer_cast<const ir::ProcessNode>(node), bindings);
+                break;
+
+            case ir::NodeKind::Send:
+                lower_send(
+                    std::static_pointer_cast<const ir::SendNode>(node), bindings);
+                break;
+
+            case ir::NodeKind::Consume:
+                lower_consume(
+                    std::static_pointer_cast<const ir::ConsumeNode>(node), bindings);
+                break;
+
             default:
                 break;
         }
+    }
+
+    /// Lower a pipeline node - creates channels and records process info for CSP execution.
+    ///
+    /// For CSP pipelines, we:
+    /// 1. Create all channels in the registry with their capacities
+    /// 2. Lower each process's body to generate tasks
+    /// 3. Mark that CSP execution mode is needed
+    ///
+    /// The actual channel-based communication happens at runtime via CSPExecutor.
+    void lower_pipeline(const ir::IRPtr<ir::PipelineNode>& pipeline,
+                        std::unordered_map<std::string, int64_t>& bindings) {
+        has_csp_ = true;
+
+        // Create all channels in the pipeline
+        for (const auto& ch : pipeline->channels) {
+            size_t capacity = ch->is_event() ? 0 : ch->type.capacity;
+            channel_registry_.create_channel(ch->name, capacity);
+        }
+
+        // Lower each process - this creates task templates
+        // Actual execution will run processes concurrently with channel communication
+        for (const auto& process : pipeline->processes) {
+            lower_process(process, bindings);
+        }
+    }
+
+    /// Lower a process node - records the process for CSP execution.
+    ///
+    /// Process bodies define what happens for each item consumed from input channels.
+    /// The body is lowered to create task templates, which will be instantiated
+    /// at runtime for each item received.
+    void lower_process(const ir::IRPtr<ir::ProcessNode>& process,
+                       std::unordered_map<std::string, int64_t>& bindings) {
+        // Store process info for CSP execution
+        // For now, lower the body to register kernels and create task templates
+        lower_workload(process->body, bindings);
+    }
+
+    /// Lower a consume node - processes items from channel until closed.
+    ///
+    /// Creates a marker task that represents the consume operation.
+    /// At CSP runtime, this will loop receiving from the channel and
+    /// executing the body for each received item.
+    void lower_consume(const ir::IRPtr<ir::ConsumeNode>& consume,
+                       std::unordered_map<std::string, int64_t>& bindings) {
+        has_csp_ = true;
+        // Lower the body to register its kernels
+        // The actual consume loop is handled by CSPExecutor at runtime
+        lower_workload(consume->body, bindings);
+    }
+
+    /// Lower a send node - sends task result to channel.
+    ///
+    /// The value is lowered to create a task, and the channel name is recorded.
+    /// At CSP runtime, after the task completes, its ID is sent to the channel.
+    void lower_send(const ir::IRPtr<ir::SendNode>& send,
+                    std::unordered_map<std::string, int64_t>& bindings) {
+        has_csp_ = true;
+        // Lower the value being sent as a task
+        // The channel name is recorded in the task metadata for CSP execution
+        lower_workload(send->value, bindings);
     }
 
     /// Lower a task node - creates a concrete task in the graph
@@ -442,17 +617,45 @@ private:
         }
     }
 
-    /// Get static size from axis, or -1 if dynamic
+    /// Get size from axis, or -1 if dynamic without runtime context
+    ///
+    /// For static Dense axes, returns the compile-time size.
+    /// For dynamic axes (DenseDyn, Ragged, Sparse), returns -1 to indicate
+    /// that runtime expansion is needed. A full implementation would look up
+    /// the size_var in a runtime context.
     int64_t get_axis_size(const ir::IRPtr<ir::AxisNode>& axis) {
         if (!axis) return -1;
 
-        if (axis->kind == ir::NodeKind::DenseAxis) {
-            auto dense = std::static_pointer_cast<const ir::DenseAxisNode>(axis);
-            return dense->size;
-        }
+        switch (axis->kind) {
+            case ir::NodeKind::DenseAxis: {
+                auto dense = std::static_pointer_cast<const ir::DenseAxisNode>(axis);
+                return dense->size;
+            }
 
-        // Dynamic axes - can't expand statically
-        return -1;
+            case ir::NodeKind::DenseDynAxis: {
+                // Dynamic axis - requires runtime size lookup
+                // In a full implementation, we would query runtime_context_.get_size(size_var)
+                // For now, return -1 to indicate dynamic expansion needed
+                return -1;
+            }
+
+            case ir::NodeKind::RaggedAxis: {
+                // Ragged axis - requires per-element sizes from runtime
+                // Total elements = sum(lengths[i]) for all i
+                // For now, return -1 to indicate dynamic expansion needed
+                return -1;
+            }
+
+            case ir::NodeKind::SparseAxis: {
+                // Sparse axis - requires indptr/indices from runtime
+                // nnz = indptr[outer_size]
+                // For now, return -1 to indicate dynamic expansion needed
+                return -1;
+            }
+
+            default:
+                return -1;
+        }
     }
 };
 

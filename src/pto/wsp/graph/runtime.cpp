@@ -1,6 +1,6 @@
 // PTO Workload-Schedule Programming (PTO-WSP) framework v9 - Task Graph Runtime Implementation
 // Copyright 2026 PTO-RT Authors
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: MIT
 
 #include "pto/rt/graph/runtime.hpp"
 

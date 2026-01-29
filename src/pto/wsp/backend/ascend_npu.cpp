@@ -1,6 +1,6 @@
 // PTO Workload-Schedule Programming (PTO-WSP) framework v9 - Ascend NPU Backend Implementation
 // Copyright (c) 2026 PTO Project
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: MIT
 
 #include "pto/rt/backend/ascend_npu.hpp"
 
@@ -542,13 +542,30 @@ private:
         }
     }
 
+    /// Get size from axis, or -1 if dynamic without runtime context
+    ///
+    /// For static Dense axes, returns the compile-time size.
+    /// For dynamic axes (DenseDyn, Ragged, Sparse), returns -1 to indicate
+    /// that runtime expansion is needed.
     int64_t get_axis_size(const ir::IRPtr<ir::AxisNode>& axis) {
         if (!axis) return -1;
-        if (axis->kind == ir::NodeKind::DenseAxis) {
-            auto dense = std::static_pointer_cast<const ir::DenseAxisNode>(axis);
-            return dense->size;
+
+        switch (axis->kind) {
+            case ir::NodeKind::DenseAxis: {
+                auto dense = std::static_pointer_cast<const ir::DenseAxisNode>(axis);
+                return dense->size;
+            }
+
+            case ir::NodeKind::DenseDynAxis:
+            case ir::NodeKind::RaggedAxis:
+            case ir::NodeKind::SparseAxis:
+                // Dynamic axes require runtime size lookup
+                // Return -1 to indicate dynamic expansion needed
+                return -1;
+
+            default:
+                return -1;
         }
-        return -1;
     }
 };
 

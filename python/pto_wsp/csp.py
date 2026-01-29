@@ -2,6 +2,16 @@
 CSP primitives for PTO Workload-Schedule Programming (PTO-WSP) framework.
 
 Pipeline-parallel programming with channels and processes.
+
+STATUS (v9):
+- Python APIs build a CSP workload graph (channels/processes/send/consume/connect).
+- CPU-sim **codegen-first** artifacts execute CSP pipelines with CSPT time semantics:
+  - timebase is PTO-ISA kernel cycle reports
+  - constant channel latency (default 0; runtime symbol override)
+
+LIMITATIONS (v9 scope):
+- CSP execution is supported in CPU-sim codegen-first artifacts; NPU execution requires device toolchain/runtime.
+- Schedule directives beyond `dispatch` + `task_window` are not fully enforced in v9 artifacts.
 """
 
 from __future__ import annotations

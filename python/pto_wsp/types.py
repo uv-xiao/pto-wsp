@@ -96,6 +96,26 @@ class Sparse:
         return self._indices[start:end]
 
 
+class Symbol:
+    """Runtime-bound symbol reference for codegen-first execution.
+
+    Used to indicate that a scalar kernel argument should be sourced from the
+    runtime symbol table (rather than baked into the compiled artifact).
+
+    Example:
+        eps_sym = Symbol("eps")
+        my_kernel(eps=eps_sym, ...)
+
+        program.set_symbol_f32("eps", 1e-6)
+    """
+
+    def __init__(self, sym: str):
+        self.sym = str(sym)
+
+    def __repr__(self) -> str:
+        return f"Symbol({self.sym!r})"
+
+
 class DType(Enum):
     """Data types."""
     F16 = "f16"
@@ -361,17 +381,37 @@ class Tensor:
             layout=TensorLayout.sharded(dim=0, rank=2, mesh_axis=0)
         )
     """
-    def __init__(self, data: Any, shape: tuple[int, ...], dtype: DType,
-                 location: Location = Location.Global,
-                 layout: TensorLayout = None):
+    def __init__(
+        self,
+        data: Any,
+        shape: tuple[int, ...],
+        dtype: DType,
+        location: Location = Location.Global,
+        layout: TensorLayout = None,
+        base: "Tensor | None" = None,
+        index_exprs: tuple[Any, ...] = (),
+    ):
         self.data = data
         self.shape = shape
         self.dtype = dtype
         self.location = location
         # R10: Layout as type refinement, not schedule primitive
         self.layout = layout or TensorLayout.default(len(shape))
+        # Codegen: track symbolic indexing to preserve tile access patterns.
+        self._base: Tensor = base if base is not None else self
+        self._index_exprs: tuple[Any, ...] = index_exprs
 
-    def __getitem__(self, idx: int) -> "Tensor":
+    @property
+    def base(self) -> "Tensor":
+        """Base tensor for a view (self for a base tensor)."""
+        return self._base
+
+    @property
+    def index_exprs(self) -> tuple[Any, ...]:
+        """Symbolic index expressions applied to reach this view."""
+        return self._index_exprs
+
+    def __getitem__(self, idx: Any) -> "Tensor":
         """Return sub-tensor view with layout propagation.
 
         When indexing into a tensor, the layout is adjusted:
@@ -385,27 +425,38 @@ class Tensor:
         Returns:
             New Tensor with reduced rank and adjusted layout
         """
+        # Type check tensor access if builder context exists
+        from pto_wsp.builder import get_current_builder
+        builder = get_current_builder()
+        if builder is not None:
+            indices = (idx,) if not isinstance(idx, tuple) else idx
+            builder.check_tensor_access(self, indices)
+
         if not self.shape:
             return self
 
-        new_shape = self.shape[1:]
+        indices = idx if isinstance(idx, tuple) else (idx,)
+        drop = min(len(indices), len(self.shape))
+
+        new_shape = self.shape[drop:]
         new_layout = None
-        if self.layout and len(self.layout.dist) > 1:
-            # Remove first dimension from distribution
-            new_layout = TensorLayout(
-                dist=tuple(self.layout.dist[1:]),
-                mem=self.layout.mem
-            )
-        elif self.layout:
-            # Single dimension - return default layout for scalar
-            new_layout = TensorLayout.default(len(new_shape)) if new_shape else None
+        if self.layout:
+            if len(self.layout.dist) > drop:
+                new_layout = TensorLayout(
+                    dist=tuple(self.layout.dist[drop:]),
+                    mem=self.layout.mem,
+                )
+            else:
+                new_layout = TensorLayout.default(len(new_shape)) if new_shape else None
 
         return Tensor(
             data=self.data,
             shape=new_shape,
             dtype=self.dtype,
             location=self.location,
-            layout=new_layout
+            layout=new_layout,
+            base=self._base,
+            index_exprs=self._index_exprs + tuple(indices),
         )
 
     def slice(self, start: int, end: int) -> "Tensor":

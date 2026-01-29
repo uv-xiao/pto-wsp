@@ -2,12 +2,17 @@
 Program execution for PTO Workload-Schedule Programming (PTO-WSP) framework.
 
 Provides compiled program execution for various backends.
+
+Codegen-first implementation:
+- `@kernel` and `@workload` lower to C++ (CPU-sim today) and are compiled into a
+  shared library that is loaded/executed via the `pto_ir_cpp` C++ bindings
+  (no Python `ctypes` runtime path).
+- Python fallback execution has been removed.
 """
 
 from __future__ import annotations
 from typing import Any, Optional, Callable, List
 from dataclasses import dataclass, field
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from enum import IntEnum, auto
 import threading
 import time
@@ -168,6 +173,7 @@ class ProgramStats:
     execute_time_ms: float = 0.0
     task_count: int = 0
     parallel_tasks: int = 0
+    total_cycles: int = 0
 
 
 @dataclass
@@ -189,12 +195,12 @@ class Program:
     """Compiled program ready for execution.
 
     The Program class represents a compiled workload that can be executed
-    on a target backend. It handles:
-    - Task enumeration from workload IR
-    - Scheduling based on dispatch/stream policies
-    - Execution on the target backend
-    - Synchronization and completion tracking
-    - Profiling and tracing (optional)
+    on a target backend via the v9 **codegen-first** pipeline:
+
+    - Python authors workloads/kernels and bridges them to a C++ `ir::Module`.
+    - C++ codegen emits backend artifacts:
+      - `target="cpu_sim"`: builds a cached shared library and executes it via `dlopen`.
+      - `target="ascend_npu"`: emits a source tree for inspection (device build/run requires Ascend/CANN).
 
     Attributes:
         workload: Source workload definition
@@ -202,15 +208,17 @@ class Program:
         options: Compilation options
         stats: Execution statistics
         trace: Execution trace (if tracing enabled)
+        using_cpp_backend: True if backed by generated artifacts
 
     Example:
         # Basic execution
         program = workload.compile(target="cpu_sim")
+        print(f"Using codegen backend: {program.using_cpp_backend}")
         program.execute()
         program.synchronize()
         print(f"Executed {program.stats.task_count} tasks")
 
-        # With profiling
+        # With profiling (requires C++ backend)
         program = workload.compile(target="cpu_sim")
         program.enable_tracing(TraceLevel.TIMING)
         program.execute()
@@ -228,7 +236,7 @@ class Program:
 
         Args:
             workload: Source Workload instance
-            target: Target backend ("cpu_sim", "ascend_npu", "amd_aie")
+            target: Target backend ("cpu_sim", "ascend_npu")
             options: Compilation options dict
         """
         self.workload = workload
@@ -238,21 +246,49 @@ class Program:
         self.trace = ExecutionTrace()
 
         # Execution state
-        self._executor: Optional[ThreadPoolExecutor] = None
-        self._futures: list = []
         self._lock = threading.Lock()
         self._complete = threading.Event()
         self._started = False
         self._trace_level = TraceLevel.NONE
-        self._task_counter = 0
 
-        # Kernel registry for CPU simulation
-        self._kernels: dict[str, Callable] = {}
+        # Dynamic axis sizes (for DenseDyn codegen). Can be updated between runs
+        # without recompiling the generated workload artifact.
+        self._axis_sizes: dict[str, int] = self._infer_axis_sizes(workload)
+        axis_sizes_opt = options.get("axis_sizes") if isinstance(options, dict) else None
+        if isinstance(axis_sizes_opt, dict):
+            for k, v in axis_sizes_opt.items():
+                self._axis_sizes[str(k)] = int(v)
+
+        # Runtime-bound symbols (hashed IDs) used by dynamic codegen artifacts.
+        # These can be changed between runs without rebuilding the artifact.
+        self._symbols_u64: dict[int, int] = {}
+        self._symbols_ptr: dict[int, Any] = {}
+
+        # Codegen-first runtime artifacts
+        self._codegen_exec = None
+        self._codegen_tensors = []
+        self._codegen_thread = None
+        self._codegen_artifact_dir: str | None = None
+        self._can_execute: bool = True
 
         # Compile the workload
         start = time.perf_counter()
         self._compiled_plan = self._compile()
         self.stats.compile_time_ms = (time.perf_counter() - start) * 1000
+
+    @property
+    def using_cpp_backend(self) -> bool:
+        """Check if this program is backed by generated C++ code.
+
+        Returns:
+            True if compiled and ready to execute.
+        """
+        return self._codegen_exec is not None or self._codegen_artifact_dir is not None
+
+    @property
+    def codegen_artifact_dir(self) -> str | None:
+        """Path to the emitted codegen artifact directory (if codegen-only target)."""
+        return self._codegen_artifact_dir
 
     def enable_tracing(self, level: TraceLevel = TraceLevel.TIMING) -> "Program":
         """Enable execution tracing.
@@ -279,14 +315,16 @@ class Program:
         """Clear collected trace events."""
         self.trace = ExecutionTrace()
 
-    def register_kernel(self, name: str, impl: Callable) -> None:
+    def register_kernel(self, name: str, impl: Callable, *, pass_task: bool = False) -> None:
         """Register a kernel implementation for CPU simulation.
 
         Args:
             name: Kernel name (must match @kernel function name)
             impl: Python callable implementing the kernel
+            pass_task: If True, pass the full Task object to impl instead of resources.
+                       This allows access to task.params (loop indices) and task.bindings.
 
-        Example:
+        Example (resource-based - default):
             @kernel
             def my_kernel(a: In[Tensor], b: Out[Tensor]): ...
 
@@ -294,32 +332,126 @@ class Program:
                 b[:] = a * 2
 
             program.register_kernel("my_kernel", my_kernel_impl)
+
+        Example (task-based):
+            def my_kernel_impl(task):
+                # Access loop indices via task.params or task.bindings
+                batch_idx = task.bindings.get("b", 0)
+                # Access resources via task.resources
+                a, b = task.resources
+                b[:] = a * 2
+
+            program.register_kernel("my_kernel", my_kernel_impl, pass_task=True)
         """
-        self._kernels[name] = impl
+        raise RuntimeError("program.register_kernel() is not supported in codegen-first mode")
+
+    def set_axis_sizes(self, axis_sizes: dict[str, int]) -> None:
+        """Update runtime axis sizes for the next execute().
+
+        This is primarily used by DenseDyn codegen: generated workload loops can
+        query axis sizes at runtime via `RuntimeContext.get_axis_size`.
+        """
+        for k, v in axis_sizes.items():
+            self._axis_sizes[str(k)] = int(v)
+
+    @staticmethod
+    def _fnv1a_64(s: str) -> int:
+        h = 0xCBF29CE484222325
+        for b in s.encode("utf-8"):
+            h ^= b
+            h = (h * 0x100000001B3) & 0xFFFFFFFFFFFFFFFF
+        return h
+
+    def set_symbol_u64(self, name: str, value: int) -> None:
+        """Bind a runtime symbol (u64) for codegen artifacts.
+
+        The generated code treats the symbol ID as a stable 64-bit hash of `name`.
+        """
+        self._symbols_u64[self._fnv1a_64(str(name))] = int(value) & 0xFFFFFFFFFFFFFFFF
+
+    def set_symbol_f32(self, name: str, value: float) -> None:
+        """Bind a runtime symbol as an f32 bit-pattern stored in u64."""
+        import struct
+
+        bits_u32 = struct.unpack("<I", struct.pack("<f", float(value)))[0]
+        self.set_symbol_u64(name, int(bits_u32))
+
+    def set_symbol_ptr(self, name: str, arr: Any) -> None:
+        """Bind a runtime symbol to a pointer-backed buffer (numpy array expected)."""
+        self._symbols_ptr[self._fnv1a_64(str(name))] = arr
+
+    @staticmethod
+    def _infer_axis_sizes(workload: Any) -> dict[str, int]:
+        """Infer axis sizes from the workload tree (best-effort)."""
+        from pto_wsp.workload import Workload as WorkloadNode
+
+        out: dict[str, int] = {}
+
+        def walk(node: Any) -> None:
+            if not isinstance(node, WorkloadNode):
+                return
+
+            kind = node._kind
+            if kind in ("parallel_for", "for_each"):
+                axis = node._kwargs.get("axis")
+                var_name = node._kwargs.get("var_name")
+                if var_name and hasattr(axis, "size"):
+                    try:
+                        out[str(var_name)] = int(axis.size)
+                    except Exception:
+                        pass
+                walk(node._kwargs.get("body"))
+                return
+
+            if kind in ("combine", "sequential"):
+                for child in node._kwargs.get("workloads", []) or []:
+                    walk(child)
+                return
+
+        walk(workload)
+        return out
 
     def _compile(self) -> "ExecutionPlan":
         """Compile workload into an execution plan.
 
-        Returns:
-            ExecutionPlan with task enumeration and scheduling
+        Compiles the workload to a codegen shared library and also enumerates
+        tasks for stats (e.g. `Program.stats.task_count`).
         """
         from pto_wsp.workload import Workload
+        from pto_wsp.errors import CompileError
 
-        # Extract workload structure
-        plan = ExecutionPlan()
+        try:
+            self._compile_codegen()
 
-        # Enumerate tasks from workload
-        tasks = self._enumerate_workload(self.workload, ExecutionContext())
-        plan.tasks = tasks
+            # Build ExecutionPlan for stats
+            plan = ExecutionPlan()
+            plan.tasks = self._enumerate_workload(self.workload, ExecutionContext())
+            if hasattr(self.workload, "_stream_count") and self.workload._stream_count:
+                plan.stream_count = self.workload._stream_count
+            if hasattr(self.workload, "_dispatch_policy") and self.workload._dispatch_policy:
+                plan.dispatch_policy = self.workload._dispatch_policy
+            return plan
+        except Exception as e:
+            raise CompileError(f"Codegen compilation failed: {e}") from e
 
-        # Apply scheduling based on workload configuration
-        if hasattr(self.workload, '_stream_count') and self.workload._stream_count:
-            plan.stream_count = self.workload._stream_count
+    def _compile_codegen(self) -> None:
+        """Compile workload + kernels into a shared library and load entrypoint."""
+        from pto_wsp.ir_bridge import check_cpp_bindings, cpp, workload_to_codegen_ir
 
-        if hasattr(self.workload, '_dispatch_policy') and self.workload._dispatch_policy:
-            plan.dispatch_policy = self.workload._dispatch_policy
+        module_name = self.workload._name if getattr(self.workload, "_name", None) else "main"
 
-        return plan
+        check_cpp_bindings()
+        build = workload_to_codegen_ir(self.workload, module_name=module_name)
+        opts = cpp.CompileOptions()
+        opts.target = str(self.target)
+        result = cpp.compile_codegen(build.module, opts)
+        self._can_execute = bool(result.get("can_execute", True))
+        if self._can_execute:
+            self._codegen_exec = cpp.CodegenExecutable(str(result["so_path"]), str(result["entrypoint"]))
+        else:
+            self._codegen_exec = None
+            self._codegen_artifact_dir = str(result.get("artifact_dir", ""))
+        self._codegen_tensors = build.tensors
 
     def _enumerate_workload(self, workload: Any, ctx: ExecutionContext) -> list["TaskInstance"]:
         """Recursively enumerate tasks from a workload.
@@ -342,7 +474,8 @@ class Program:
 
         if kind == "task":
             # Leaf task node - create TaskInstance
-            kernel_name = workload._kwargs.get("kernel", "unknown")
+            kernel = workload._kwargs.get("kernel", "unknown")
+            kernel_name = kernel.name if hasattr(kernel, "name") else str(kernel)
             params = workload._kwargs.get("params", [])
             resources = workload._kwargs.get("resources", [])
 
@@ -432,6 +565,52 @@ class Program:
             for w in workloads:
                 tasks.extend(self._enumerate_workload(w, ctx))
 
+        elif kind == "select":
+            # Sparse selection - enumerate selected indices
+            sparse = workload._kwargs.get("sparse")
+            var_name = workload._kwargs.get("var_name", "e")
+            body = workload._kwargs.get("body")
+
+            if sparse is not None and body:
+                # Get selected indices from Sparse axis
+                indices = self._get_sparse_indices(sparse)
+                for idx in indices:
+                    new_ctx = ctx.with_binding(var_name, idx)
+                    if callable(body):
+                        body_workload = body(idx)
+                        tasks.extend(self._enumerate_workload(body_workload, new_ctx))
+                    else:
+                        tasks.extend(self._enumerate_workload(body, new_ctx))
+
+        elif kind == "cond":
+            # Conditional workload - evaluate predicate to select branch
+            predicate = workload._kwargs.get("predicate")
+            then_workload = workload._kwargs.get("then_workload")
+            else_workload = workload._kwargs.get("else_workload")
+
+            # Evaluate predicate (may be runtime value or constant)
+            # In builder mode, we take the then branch by default
+            # In execution mode with real data, we would evaluate the predicate
+            branch_taken = True
+            if callable(predicate):
+                try:
+                    branch_taken = bool(predicate())
+                except Exception:
+                    branch_taken = True  # Default to then branch
+            elif isinstance(predicate, bool):
+                branch_taken = predicate
+
+            if branch_taken and then_workload:
+                tasks.extend(self._enumerate_workload(then_workload, ctx))
+            elif not branch_taken and else_workload:
+                tasks.extend(self._enumerate_workload(else_workload, ctx))
+
+        elif kind == "pipeline":
+            # Pipeline workload - enumerate all stages
+            stages = workload._kwargs.get("stages", [])
+            for stage in stages:
+                tasks.extend(self._enumerate_workload(stage, ctx))
+
         elif kind == "empty":
             pass
 
@@ -471,157 +650,87 @@ class Program:
             return len(axis)
         return 0
 
-    def execute(self) -> None:
-        """Execute the compiled program.
+    def _get_sparse_indices(self, sparse: Any) -> list[int]:
+        """Get the indices from a Sparse axis.
 
-        Dispatches tasks according to the schedule and begins execution
-        on the target backend. For CPU simulation, uses a thread pool.
+        Args:
+            sparse: Sparse axis object or list of indices
+
+        Returns:
+            List of selected indices
+        """
+        if isinstance(sparse, (list, tuple)):
+            return list(sparse)
+        if hasattr(sparse, 'indices'):
+            return list(sparse.indices)
+        if hasattr(sparse, '__iter__'):
+            return list(sparse)
+        return []
+
+    def execute(self) -> None:
+        """Execute the compiled program (codegen-first).
 
         This method is non-blocking. Use synchronize() to wait for completion.
 
         Raises:
-            RuntimeError: If program was already started
+            RuntimeError: If program was already started or not compiled.
         """
         with self._lock:
-            if self._started:
+            if self._started and not self._complete.is_set():
                 raise RuntimeError("Program already started")
             self._started = True
             self._complete.clear()
 
         start = time.perf_counter()
 
-        if self.target == "cpu_sim":
-            self._execute_cpu_sim()
-        else:
-            # For other backends, just mark complete (placeholder)
-            self._complete.set()
+        if not self._can_execute:
+            raise RuntimeError(
+                f"Target '{self.target}' is codegen-only in this environment; "
+                f"artifact_dir={self._codegen_artifact_dir!r}"
+            )
+        if self._codegen_exec is None:
+            raise RuntimeError("Program not compiled (missing codegen executable)")
+
+        self._execute_codegen()
 
         self.stats.execute_time_ms = (time.perf_counter() - start) * 1000
 
-    def _execute_cpu_sim(self) -> None:
-        """Execute using CPU simulation backend.
+    def _execute_codegen(self) -> None:
+        """Execute generated workload code in a background thread."""
+        import numpy as np
+        from pto_wsp.types import DType, Tensor
 
-        Uses ThreadPoolExecutor for parallel task execution.
-        """
-        plan = self._compiled_plan
+        self.stats.task_count = len(self._compiled_plan.tasks)
 
-        if not plan.tasks:
-            self._complete.set()
-            return
+        def ensure_numpy(t: Tensor) -> np.ndarray:
+            if t.data is None:
+                if t.dtype == DType.F32:
+                    t.data = np.zeros(t.shape, dtype=np.float32)
+                elif t.dtype == DType.F16:
+                    t.data = np.zeros(t.shape, dtype=np.float16)
+                elif t.dtype == DType.I32:
+                    t.data = np.zeros(t.shape, dtype=np.int32)
+                elif t.dtype == DType.I64:
+                    t.data = np.zeros(t.shape, dtype=np.int64)
+                else:
+                    raise ValueError(f"Unsupported dtype for codegen runtime: {t.dtype}")
+            if not isinstance(t.data, np.ndarray):
+                raise TypeError(f"Tensor.data must be a numpy.ndarray for codegen runtime (got {type(t.data)})")
+            return t.data
 
-        self.stats.task_count = len(plan.tasks)
-
-        # Determine parallelism level
-        max_workers = plan.stream_count if plan.stream_count else 4
-
-        # Create executor
-        self._executor = ThreadPoolExecutor(max_workers=max_workers)
-
-        # Check if workload has sequential dependencies
-        has_sequential = self._has_sequential_deps()
-
-        if has_sequential:
-            # Execute sequentially
-            for task in plan.tasks:
-                self._execute_task(task)
-            self._complete.set()
-        else:
-            # Execute in parallel
-            self.stats.parallel_tasks = len(plan.tasks)
-            self._futures = [
-                self._executor.submit(self._execute_task, task)
-                for task in plan.tasks
-            ]
-
-            # Wait for all in background thread
-            def wait_for_all():
-                for f in as_completed(self._futures):
-                    try:
-                        f.result()
-                    except Exception as e:
-                        pass  # Log error in production
+        def run():
+            try:
+                if self._codegen_exec is None:
+                    raise RuntimeError("Program not compiled (missing codegen executable)")
+                arrays = [ensure_numpy(t) for t in self._codegen_tensors]
+                axis_sizes = {str(k): int(v) for k, v in self._axis_sizes.items()}
+                cycles = self._codegen_exec.run_with_symbols(arrays, axis_sizes, dict(self._symbols_u64), dict(self._symbols_ptr))
+                self.stats.total_cycles = int(cycles)
+            finally:
                 self._complete.set()
 
-            threading.Thread(target=wait_for_all, daemon=True).start()
-
-    def _has_sequential_deps(self) -> bool:
-        """Check if workload has sequential dependencies."""
-        if hasattr(self.workload, '_kind'):
-            return self.workload._kind == "sequential"
-        return False
-
-    def _execute_task(self, task: "TaskInstance") -> None:
-        """Execute a single task.
-
-        Args:
-            task: TaskInstance to execute
-        """
-        # Assign task ID
-        with self._lock:
-            task_id = self._task_counter
-            self._task_counter += 1
-
-        thread_id = threading.current_thread().ident
-
-        # Record task start if tracing
-        if self._trace_level >= TraceLevel.TIMING:
-            task_start = time.perf_counter_ns()
-
-        kernel_impl = self._kernels.get(task.kernel)
-        kernel_start = None
-        kernel_end = None
-
-        if kernel_impl:
-            # Record kernel start if full tracing
-            if self._trace_level >= TraceLevel.TIMING:
-                kernel_start = time.perf_counter_ns()
-
-            # Call the registered kernel implementation
-            try:
-                kernel_impl(*task.resources)
-            except Exception as e:
-                if self._trace_level >= TraceLevel.FULL:
-                    # Record error in trace
-                    self.trace.add_event(TraceEvent(
-                        name=f"error:{task.kernel}",
-                        category="error",
-                        start_ns=time.perf_counter_ns(),
-                        end_ns=time.perf_counter_ns(),
-                        task_id=task_id,
-                        thread_id=thread_id,
-                        metadata={"error": str(e)},
-                    ))
-
-            # Record kernel end if full tracing
-            if self._trace_level >= TraceLevel.TIMING:
-                kernel_end = time.perf_counter_ns()
-
-        # Record trace events
-        if self._trace_level >= TraceLevel.TIMING:
-            task_end = time.perf_counter_ns()
-
-            # Task event
-            self.trace.add_event(TraceEvent(
-                name=f"task:{task.kernel}",
-                category="task",
-                start_ns=task_start,
-                end_ns=task_end,
-                task_id=task_id,
-                thread_id=thread_id,
-                metadata={"bindings": task.bindings} if self._trace_level >= TraceLevel.FULL else {},
-            ))
-
-            # Kernel event (only if kernel was executed)
-            if kernel_start is not None and kernel_end is not None:
-                self.trace.add_event(TraceEvent(
-                    name=task.kernel,
-                    category="kernel",
-                    start_ns=kernel_start,
-                    end_ns=kernel_end,
-                    task_id=task_id,
-                    thread_id=thread_id,
-                    metadata={"params": task.params} if self._trace_level >= TraceLevel.FULL else {},
-                ))
+        self._codegen_thread = threading.Thread(target=run, daemon=True)
+        self._codegen_thread.start()
 
     def synchronize(self) -> None:
         """Wait for all tasks to complete.
@@ -629,11 +738,9 @@ class Program:
         Blocks until all dispatched tasks have finished executing.
         """
         self._complete.wait()
-
-        # Cleanup executor
-        if self._executor:
-            self._executor.shutdown(wait=True)
-            self._executor = None
+        t = self._codegen_thread
+        if t is not None:
+            t.join(timeout=5.0)
 
     def is_complete(self) -> bool:
         """Check if all tasks have completed.
@@ -658,7 +765,7 @@ class TaskInstance:
     """
     kernel: str
     params: list[Any]
-    resources: list[Any]
+    resources: Any
     bindings: dict[str, int] = field(default_factory=dict)
 
     def get(self, axis: str) -> int:

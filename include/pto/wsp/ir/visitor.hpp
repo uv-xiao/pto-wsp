@@ -1,6 +1,6 @@
 // PTO Workload-Schedule Programming (PTO-WSP) framework v9 - Visitor and Traversal
 // Copyright (c) 2024 PTO Project
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: MIT
 
 #pragma once
 
@@ -37,6 +37,8 @@ struct IRVisitor {
 
     // Workload nodes
     virtual WalkControl enter(const TaskNode& n) { return enter(static_cast<const IRNode&>(n)); }
+    virtual WalkControl enter(const SlotSetU64Node& n) { return enter(static_cast<const IRNode&>(n)); }
+    virtual WalkControl enter(const SlotLoadU64Node& n) { return enter(static_cast<const IRNode&>(n)); }
     virtual WalkControl enter(const ParallelForNode& n) { return enter(static_cast<const IRNode&>(n)); }
     virtual WalkControl enter(const ForEachNode& n) { return enter(static_cast<const IRNode&>(n)); }
     virtual WalkControl enter(const SelectNode& n) { return enter(static_cast<const IRNode&>(n)); }
@@ -95,6 +97,10 @@ inline WalkControl dispatchEnter(const IRPtr<IRNode>& node, IRVisitor& v) {
         // Workload nodes
         case NodeKind::Task:
             return v.enter(static_cast<const TaskNode&>(*node));
+        case NodeKind::SlotSetU64:
+            return v.enter(static_cast<const SlotSetU64Node&>(*node));
+        case NodeKind::SlotLoadU64:
+            return v.enter(static_cast<const SlotLoadU64Node&>(*node));
         case NodeKind::ParallelFor:
             return v.enter(static_cast<const ParallelForNode&>(*node));
         case NodeKind::ForEach:

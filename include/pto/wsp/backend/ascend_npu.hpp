@@ -1,6 +1,6 @@
 // PTO Workload-Schedule Programming (PTO-WSP) framework v9 - Ascend NPU Backend
 // Copyright (c) 2026 PTO Project
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: MIT
 //
 // This backend generates Ascend NPU code (similar to pto-isa-wc approach).
 // No Ascend SDK required - pure code generation.

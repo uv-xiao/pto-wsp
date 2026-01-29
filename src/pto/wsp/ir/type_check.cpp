@@ -1,6 +1,6 @@
 // PTO Workload-Schedule Programming (PTO-WSP) framework v9 - IR Type Checking Pass Implementation
 // Copyright (c) 2026 PTO Project
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: MIT
 
 #include "pto/rt/ir/type_check.hpp"
 

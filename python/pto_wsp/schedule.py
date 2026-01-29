@@ -3,9 +3,8 @@ Schedule policies for PTO Workload-Schedule Programming (PTO-WSP) framework.
 
 This module provides schedule primitives for controlling:
 - Task dispatch (which executor handles each task)
-- Issue policy (task ordering within executors)
 - Timing policy (when tasks are issued)
-- Extended primitives: dispatch_threshold, pipeline_depth, task_window, batch_deps
+- Task graph configuration (R9 - pto-isa-lh compatible)
 """
 
 from __future__ import annotations
@@ -18,13 +17,6 @@ class WindowMode(Enum):
     STALL = "stall"       # Block until window has space
     ABORT = "abort"       # Fail immediately on overflow
     BENCHMARK = "benchmark"  # Record overflow events for profiling
-
-
-class GateScope(Enum):
-    """Pipeline depth scope."""
-    GLOBAL = "global"         # Single global depth limit
-    PER_STREAM = "per_stream" # Per-stream depth limits
-    PER_POOL = "per_pool"     # Per-pool depth limits (vector/cube)
 
 
 class DispatchPolicy:
@@ -40,14 +32,14 @@ class DispatchPolicy:
         return DispatchPolicy("round_robin", num_aicpus=num_aicpus)
 
     @staticmethod
-    def affinity(key_fn: Callable[[Any], Any]) -> DispatchPolicy:
+    def affinity(key_fn: Callable[[Any], Any], num_aicpus: int = 0) -> DispatchPolicy:
         """Same key value → same AICPU."""
-        return DispatchPolicy("affinity", key_fn=key_fn)
+        return DispatchPolicy("affinity", key_fn=key_fn, num_aicpus=num_aicpus)
 
     @staticmethod
-    def hash(key_fn: Callable[[Any], Any]) -> DispatchPolicy:
+    def hash(key_fn: Callable[[Any], Any], num_aicpus: int = 0) -> DispatchPolicy:
         """Hash-based assignment."""
-        return DispatchPolicy("hash", key_fn=key_fn)
+        return DispatchPolicy("hash", key_fn=key_fn, num_aicpus=num_aicpus)
 
     @staticmethod
     def work_steal() -> DispatchPolicy:
@@ -55,42 +47,9 @@ class DispatchPolicy:
         return DispatchPolicy("work_steal")
 
     @staticmethod
-    def dispatch_by(fn: Callable[[Any], int]) -> DispatchPolicy:
+    def dispatch_by(fn: Callable[[Any], int], num_aicpus: int = 0) -> DispatchPolicy:
         """Custom dispatch function."""
-        return DispatchPolicy("dispatch_by", fn=fn)
-
-
-class IssuePolicy:
-    """Issue policy: determines task ordering within each AICPU."""
-
-    def __init__(self, kind: str, **kwargs):
-        self._kind = kind
-        self._kwargs = kwargs
-
-    @staticmethod
-    def stream_by(key_fn: Callable[[Any], int]) -> IssuePolicy:
-        """Stream assignment by key function."""
-        return IssuePolicy("stream_by", key_fn=key_fn)
-
-    @staticmethod
-    def single_stream() -> IssuePolicy:
-        """All tasks in single stream."""
-        return IssuePolicy("single_stream")
-
-    @staticmethod
-    def per_axis(axis: Any) -> IssuePolicy:
-        """Each axis value → separate stream."""
-        return IssuePolicy("per_axis", axis=axis)
-
-    @staticmethod
-    def fifo() -> IssuePolicy:
-        """First-in-first-out ordering."""
-        return IssuePolicy("fifo")
-
-    @staticmethod
-    def priority(priority_fn: Callable[[Any], int]) -> IssuePolicy:
-        """Priority-based ordering."""
-        return IssuePolicy("priority", priority_fn=priority_fn)
+        return DispatchPolicy("dispatch_by", fn=fn, num_aicpus=num_aicpus)
 
 
 class TimingPolicy:
@@ -126,58 +85,6 @@ class TimingPolicy:
 TimingPolicy.immediate = TimingPolicy("immediate")
 
 
-# ============================================================
-# Extended Schedule Primitives (R5)
-# ============================================================
-
-class DispatchThreshold:
-    """Multi-level dispatch based on workload size thresholds.
-
-    Different dispatch policies are applied based on thresholds:
-    - Small workloads: single executor (threshold[0])
-    - Medium workloads: few executors with affinity
-    - Large workloads: many executors with work-stealing
-
-    Example:
-        DispatchThreshold(
-            thresholds=[256, 1024, 4096],
-            policies={
-                256: DispatchPolicy.round_robin(1),
-                1024: DispatchPolicy.affinity(lambda t: t.batch),
-                4096: DispatchPolicy.work_steal(),
-            }
-        )
-    """
-
-    def __init__(self, thresholds: List[int], policies: Dict[int, DispatchPolicy]):
-        self.thresholds = sorted(thresholds)
-        self.policies = policies
-
-    def select_policy(self, workload_size: int) -> DispatchPolicy:
-        """Select the appropriate policy based on workload size."""
-        for threshold in reversed(self.thresholds):
-            if workload_size >= threshold:
-                return self.policies.get(threshold)
-        return self.policies.get(self.thresholds[0]) if self.thresholds else None
-
-
-class PipelineDepth:
-    """In-flight task control (double/triple buffering).
-
-    Controls maximum number of tasks in-flight per scope:
-    - GLOBAL: single limit across all streams
-    - PER_STREAM: each stream has its own limit
-    - PER_POOL: separate limits for vector/cube pools
-
-    Example:
-        PipelineDepth(depth=2, scope=GateScope.PER_STREAM)
-    """
-
-    def __init__(self, depth: int, scope: GateScope = GateScope.GLOBAL):
-        self.depth = depth
-        self.scope = scope
-
-
 class TaskWindow:
     """Metadata window management for task tracking.
 
@@ -199,24 +106,8 @@ class TaskWindow:
         self.mode = mode
 
 
-class BatchDeps:
-    """Batched dependency resolution.
-
-    Defers dependency resolution until threshold tasks accumulated:
-    - Reduces per-task resolution overhead
-    - Optional range compression for consecutive task IDs
-
-    Example:
-        BatchDeps(threshold=64, range_compression=True)
-    """
-
-    def __init__(self, threshold: int, range_compression: bool = False):
-        self.threshold = threshold
-        self.range_compression = range_compression
-
-
 # ============================================================
-# Task Graph Primitives (R9)
+# Task Graph Primitives (R9 - pto-isa-lh compatible)
 # ============================================================
 
 class DepsMode(Enum):

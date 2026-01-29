@@ -1,6 +1,6 @@
 // PTO Workload-Schedule Programming (PTO-WSP) framework v9 - Common Concurrency Utilities
 // Copyright (c) 2026 PTO Project
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: MIT
 //
 // This file extracts common concurrency patterns from pto-isa-lh and pto-isa-wc
 // for reuse across backends. Implements L12 requirement for common concurrency utilities.
