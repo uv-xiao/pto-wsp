@@ -1,7 +1,7 @@
 # PTO Workload-Schedule Programming (PTO-WSP) framework v9: In-Python NPU Function Design
 
 > **Note**: This document describes the legacy NPU function builder API (`npu()`).
-> For new code, use the **JIT Kernel API** (`@jit_kernel` with `tl.*` primitives) in `python/pto_wsp/kernel.py`.
+> For new code, use the **JIT Kernel API** (`@jit_kernel` with `pto.*` primitives) in `python/pto_wsp/kernel.py`.
 > See `docs/features.md` Section 6 for the recommended approach.
 
 ## 1. Overview
@@ -12,7 +12,7 @@ This document specifies the in-Python NPU function builder API for v9. The desig
 
 1. **Builder Pattern**: Fluent API like `PTOFunctionBuilder` for defining NPU kernels
 2. **Two-Level Model**: Workload IR builds task graph; NPUFunction IR defines kernels
-3. **Multi-Backend**: Same kernel IR targets CPU simulation, Ascend NPU, AMD AIE
+3. **Multi-Backend**: Same kernel IR targets CPU simulation and Ascend NPU
 4. **Separate Compilation**: Kernels are compilation units referenced by tasks (not inlined IR)
 5. **Schedule Separation**: Functional IR (portable) + Schedule annotations (backend-specific)
 

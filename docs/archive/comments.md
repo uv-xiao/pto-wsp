@@ -26,13 +26,13 @@ V9 version has many problems to fix:
 
 1. Although we cannot validate NPU (Ascend) backends, we should validate the CPU simulation backend with full end-to-end examples, as did in pto-isa-lh's bgemm, softmax, llama, and we should also add a deepseek-v3.2-exp example.
 2. The file structure is kind of wierd: all C++ things are hpp @include/pto/rt. We should seperate header files and implementation. You should act as a C++ expert to architect the file organization and building system (CMake).
-3. The @docs/task_plan.md should contains two part: 1. tasks list with status; 2. consice implementation notes/logging. The current one is not focused enough and even out-of-date.
+3. The documentation set should be consistent and up-to-date; avoid relying on separate “task plan” files as the source of truth.
 4. We need to refine the documents: analysis.md is for rationale/requirement analysis and discussion, showing why our technique looks like this; spec.md holds the detailed design and implementation key points; some other documents hold the indivudial techniques' details; and we need a new document, features.md, which should iterate all features in current version, each one should be concisely explained (can be visual if necessary), and provide links to detailed explanation or codes.
 
 ---
 
 1. Documents are a mess. We should put only reference analysis in @docs/reference (old documents @docs/research/id_xxx.md). Put intermediate analysis in @docs/research (such as @docs/research/backend_code_reuse_research.md, @docs/cpp_restructuring_plan.md). Put detailed design in @docs/design (such as @docs/backend-arch.md). And @docs/analysis.md, @docs/spec.md, @docs/features.md under @docs (keep their current location). You should write in @docs/README.md and @CLAUDE.md about how to put document files.
-2. You must make sure all features are fully implemented: not only in python frontend/JIT, but also in compiler framework and backend codegen. You should carefully inspect codes for all features. You should add unimplemented features as tasks in @task_plan.md.
+2. You must make sure all features are fully implemented: not only in python frontend/JIT, but also in compiler framework and backend codegen. Prefer tracking remaining gaps via issues/PRs and keeping `docs/spec.md` / `docs/features.md` aligned with implementation.
 3. I'm not satisfied about the NPU workload programming. Current version looks like pto-isa-lh. But we need better JIT programming support, like Triton / JAX / Tilelang, you can find references from @docs/research. I especially hate string-based ref, such as tile("x", 32, 128, dtype=DType.F16). We also don't need the extreme combinator style. You should understand what pto-isa @docs/research/04_pto_isa.md and @3rdparty/pto-isa provides, to design the kernel programming DSL, since kernel will generate pto-isa (for Ascend NPU) directly. Why we cannot only use the @kernel programming for NPU? We should extend @kernel programming to include all npu programming primitives. Also, kernel schedule primitives are not present yet. Are they not documented or not implemented?
 4. The features.md document should be better structured. The presentation order of the features must have good logic.
 5. You write many tests, but I think they are not fully qualifiable. You should reduce the number but improve tests' quality. Especially, we should have end-to-end test to generate true target code for specific backends.
@@ -48,4 +48,66 @@ V9 version has many problems to fix:
 
 For docs/v9_design_review_v2.md, the comments:
 
-*1.1* : fix doc links. For versioning, we should use v9.3 as the design version. But the python package should have "version = 0.1.0", since we don't have a complete implementation yet. 
+*1.1* : fix doc links. For versioning, we should use v9.3 as the design version. But the python package should have "version = 0.1.0", since we don't have a complete implementation yet. For licence, let's use a MIT license for the project, but provide a license under 3rdparty (LICENSE-3RD-PARTY.md) to emphasize pto-isa's CANN license. Also add the license in the README.
+
+*1.2* : the `docs/spec.md` is somehow outdated. We need to use /codex to decide whether a feature is missing in implementaion or the feature should be removed from the document. In my mind, we should prefer consolidating things instead adding all features that might be useless. The document must align with implementation.
+
+*1.3* : similarly, we need to align the document with codes.
+
+*1.4*: I think python ir_passes is not useful and should be removed. The C++ compiler codes should implement the extensive IR features fully. Don't leave the features as only planned.
+
+*2.1*: We should just remove the legacy things. We should not use the term `tl`, but `pto` is better. We should keep `python/pto_wsp/kernel.py` as canonical and remove duplicate things (ask /codex for final decisions).
+
+*2.2*: Use real typing. Ask /codex to carefully design.
+
+*2.3*, *2.4*, *2.5*: improve as recommended.
+
+*2.6*: fix the binding.
+
+For *3.x* items, I agree with the reviews and recommendation.
+
+*4.1* : we should deliver typing things down to C++ compiler.
+
+*4.2* : Option A is good.
+
+*4.3* : We don't need the python executor anymore. But the IR bridge must pass all the things down to C++ to observe. This must be coherent.
+
+Take advice for *5.x*.
+
+*6.1* : the requirements explicitly demands variable-length. I think our design provide the capability. Why not supported in C++ lowering? /codex do analysis. Also, I think our workload design can describe tier-based kernel specialization. For first-class IR support for "descriptor arrays' or segmented KV chunks, I think they can still be represented by existing features. the flashinfer_decode example must provide evidence.
+
+*6.2* : recommendation is right.
+
+*6.3* : same issue as *1.4*, we need better compiler base.
+
+All improvements must be done in v9, since they are all v9's implementation/design issues. No defering is allowed.
+
+---
+
+## Summary: How Comments Influenced v9 Design
+
+### Major Design Shifts
+
+1. **Declarative style** (R1): Removed decorator style, use `for b in P(axis)` syntax
+2. **JIT kernels** (R7, L3): Replaced string-based refs with typed `pto.*` primitives
+3. **Combinator schedule** (C1): `.dispatch().streams()` chain instead of fluent style
+4. **Layout types** (R10): Dato-style refinement types, not schedule primitives
+5. **Task graph** (R9): `.task_graph()` as alternative to streams
+
+### User Decisions Applied
+
+| Item | Decision |
+|------|----------|
+| Version | v9.3 design, `0.1.0` Python package |
+| License | MIT with LICENSE-3RD-PARTY.md for pto-isa CANN |
+| Execution | Option A - C++ backend required |
+| Namespace | `pto` instead of `tl` |
+| Schedule | Only `dispatch_threshold` kept (later removed) |
+
+### Requirements Traceability
+
+All requirements implemented and verified:
+- **R1-R11**: Core design requirements (declarative style, JIT, layout types, task graph)
+- **C1-C2**: Combinator schedule, pto-isa as 3rdparty
+- **N1-N4**: End-to-end examples, C++ file structure, features.md
+- **L1-L12**: Document organization, feature gaps, kernel JIT, test quality, documentation

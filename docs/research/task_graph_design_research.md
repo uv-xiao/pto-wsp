@@ -76,7 +76,7 @@ The spec-defined surface API is in `docs/spec.md#L838`, and the intended two-pha
 ---
 
 **4) Proposed `task_graph()` schedule primitive (alternative to `streams()`)**  
-Goal: provide a first-class “pto-isa-lh-compatible” execution mode in v9 (explicit DAG counters + TensorMap inference), while still allowing a stream mode for simple cases. (This is also already flagged as R9 in `docs/task_plan.md#L226`.)
+Goal: provide a first-class “pto-isa-lh-compatible” execution mode in v9 (explicit DAG counters + TensorMap inference), while still allowing a stream mode for simple cases.
 
 I recommend modeling `task_graph()` as selecting a different **issue engine**:
 

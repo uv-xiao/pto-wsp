@@ -1,14 +1,16 @@
 # PTO Workload-Schedule Programming (PTO-WSP) v9: API Specification
 
+> **Design Version:** v9.3 | **Implementation Version:** 0.1.0 (Prototype)
+
 ## 1. Overview
 
 This specification defines the v9 API for PTO-ISA runtime extension, supporting:
 
 1. **Python frontend** with declarative and combinator-style APIs
 2. **Typed workload expressions** preserved from v8
-3. **CSP pipeline-parallel** with `Channel`, `Process`, `consume`
+3. **CSP pipeline-parallel** with `Channel`, `Process`, `consume` *(Partial)*
 4. **Spatial schedule primitives** for dataflow architectures
-5. **Multi-backend compilation** (CPU sim, NPU, AIE)
+5. **Multi-backend compilation** (CPU sim, NPU)
 
 ### 1.1 Modules
 
@@ -27,8 +29,8 @@ from pto_wsp import (
 
     # Kernel definition (NEW in v9 - R7)
     kernel,                     # @kernel decorator (builder-style)
-    jit_kernel,                 # @jit_kernel decorator (Triton-style, RECOMMENDED)
-    tl,                         # Tile language primitives (tl.load, tl.store, tl.matmul, etc.)
+    jit_kernel,                 # @jit_kernel decorator (Triton-style)
+    pto,                        # PTO tile language primitives (pto.load, pto.store, etc.)
     In, Out, InOut, Constexpr,  # Type annotations for kernel signatures
     Tile, Scalar,               # Typed kernel parameters
 
@@ -36,23 +38,23 @@ from pto_wsp import (
     Channel, process, send, consume, connect, replicate,
 
     # Schedule policies
-    DispatchPolicy, IssuePolicy, TimingPolicy,
+    DispatchPolicy, TimingPolicy,  # IssuePolicy removed (unused)
 
-    # Task graph configuration
-    Deps, ReadyPolicy, StartPolicy, TracePolicy, Pools, TaskWindow,
+    # Task graph configuration (Experimental)
+    Deps, ReadyPolicy, StartPolicy, TracePolicy, Pools,
 
     # Tensor layout (R10)
     TensorLayout, TensorShard, TensorReplicate, MemLayout,
     relayout, allreduce, allgather, reduce_scatter,
 
-    # Spatial layout
-    Shard, Replicate,
+    # Spatial layout (use TensorShard/TensorReplicate instead)
+    # Shard, Replicate,  # Deprecated
 
     # Execution
     Program,
 
-    # Legacy (deprecated)
-    # register_kernel, ExternalKernel, npu, NPUFunction
+    # Legacy (deprecated - do not use)
+    # register_kernel, ExternalKernel, npu, NPUFunction, kernel_legacy
 )
 ```
 
@@ -159,7 +161,7 @@ class Tensor:
     shape: tuple[int, ...]
     dtype: DType
     location: Location
-    layout: Layout      # NEW: Layout refinement (R8, R10)
+    layout: TensorLayout      # NEW: Layout refinement (R8, R10)
 
     def __getitem__(self, idx: int) -> Tensor: ...
     def slice(self, start: int, end: int) -> Tensor: ...
@@ -171,42 +173,24 @@ class Tensor:
 Layout is a **type-level refinement** (not a schedule primitive). See `docs/research/type_system_research.md` for rationale.
 
 ```python
-from pto_wsp import Layout, Shard, Replicate, MemLayout
+from pto_wsp import TensorLayout, TensorShard, TensorReplicate, MemLayout
 
-# Distribution types (Dato-style)
-class Replicate:
-    """Full data on each tile/worker."""
-    pass
+# TensorLayout = (distribution per dim) × (optional MemLayout)
+#
+# - Distribution facet: per-dimension elements of {R, S(mesh_axis)}
+# - Memory facet: optional MemLayout (strides/order/swizzle)
 
-class Shard:
-    """Partitioned along mesh axis."""
-    def __init__(self, mesh_axis: int):
-        self.mesh_axis = mesh_axis
+# All-replicated by default
+layout0 = TensorLayout.default(rank=4)
 
-# Memory layout (Triton-style composable layout)
-class MemLayout:
-    """Physical memory arrangement."""
-    strides: tuple[int, ...]
-    order: tuple[int, ...]       # Iteration order (contiguity)
-    swizzle: Optional[str] = None  # Bank conflict avoidance
+# Shard only dim=0 onto mesh axis 0 (others replicated)
+layout1 = TensorLayout.sharded(dim=0, rank=4, mesh_axis=0)
 
-    def compose(self, other: MemLayout) -> MemLayout: ...
-    def permute(self, perm: tuple[int, ...]) -> MemLayout: ...
-    def tile(self, tile_shape: tuple[int, ...]) -> MemLayout: ...
-
-# Unified Layout = Distribution × Memory
-class Layout:
-    """Layout type with distribution and memory facets."""
-    dist: tuple[Replicate | Shard, ...]  # Per-dimension distribution
-    mem: Optional[MemLayout] = None       # Physical layout (optional)
-
-    def __init__(self, *dist: Replicate | Shard, mem: MemLayout = None):
-        self.dist = dist
-        self.mem = mem
-
-# Tensor with layout refinement
-Q: Tensor[F16, (B, H, S, D), TensorLayout(TensorShard(0), TensorReplicate(), TensorReplicate(), TensorReplicate())]
-K: Tensor[F16, (B, S, D), TensorLayout(TensorReplicate(), TensorShard(1), TensorReplicate())]
+# Full control (explicit dist tuple + optional memory layout)
+layout2 = TensorLayout(
+    (TensorShard(0), TensorReplicate(), TensorReplicate(), TensorReplicate()),
+    mem=MemLayout.row_major((B, H, S, D)),
+)
 ```
 
 **Layout Compatibility (Dato rules):**
@@ -380,6 +364,11 @@ def tiered_attention(batch, seq_lens):
             attn_32k[b](...)
 ```
 
+**v9 runtime semantics (codegen-first):**
+- Predicates are compiled as a structured expression IR (**ScalarExpr**) and evaluated inside the generated artifact.
+- Predicates may depend on task-local values (axis vars / params), runtime symbols, and runtime **slots** (see below).
+- Do not rely on Python booleans or host-side “driver loops” for conditional behavior in v9.
+
 ### 3.5 Kernel Calls (Leaf Workloads)
 
 **Direct kernel call** `kernel[axes](args...)` is the recommended leaf workload:
@@ -452,6 +441,17 @@ pipeline.join()
 connect([generator, replicate(worker, 4)], [work_queue])
 ```
 
+### 3.8 Slot Primitives (Tensor → scalar bridge)
+
+Dynamic workloads often need **data-dependent control flow** (e.g., routing decisions) where a kernel produces tensor data,
+but `cond`/schedule keys need scalars/bools. v9 exposes a minimal “slot” facility to bridge tensor values into ScalarExpr:
+
+- `slot_set_u64(slot, value)` — debug/tests
+- `slot_load_u64(slot, tensor_view, row=0, col=0)` — load a tensor element into a runtime slot
+- `slot_u64(i)` — use the slot value in ScalarExpr predicates/keys (via `pto_wsp.scalar_expr`)
+
+These are compiled and executed inside artifacts (CPU-sim), enabling data-dependent branching without recompiling.
+
 ---
 
 ## 4. Schedule API
@@ -464,23 +464,12 @@ Schedules use **combinator style**: each method returns a new schedule with the 
 # Create schedule from workload using combinator style
 program = (workload
     .dispatch(DispatchPolicy.round_robin(4))
-    .streams(2)
-    .stream_by(lambda t: t.params[0] % 2)
-    .timing(TimingPolicy.immediate)
-    .compile())
+    .task_graph(window=TaskWindow(8192, "tasks", WindowMode.STALL))
+    .compile(target="cpu_sim"))
 
-# Or step-by-step for readability
-schedule = workload.dispatch(DispatchPolicy.affinity(lambda t: t.batch))
-schedule = schedule.streams(4)
-schedule = schedule.stream_by(lambda t: t.head % 4)
-schedule = schedule.timing(TimingPolicy.interleaved(4))
-
-# Spatial primitives (new in v9)
-schedule = schedule.spatial_map(grid=(4, 4))
-schedule = schedule.layout(Q, Shard(dim=0), Replicate())
-
-# Compile to executable program
-program = schedule.compile()
+# Notes (v9):
+# - `streams/stream_by/timing` exist as schedule API but are not fully enforced in v9 artifacts.
+# - Layout is a tensor type refinement; use `TensorLayout` + `relayout(...)` (not `schedule.layout(...)`).
 ```
 
 **Key difference from v8:** The schedule is bound to the workload via combinator methods, enabling better type checking. Each method returns a new schedule with accumulated policies.
@@ -491,7 +480,7 @@ program = schedule.compile()
 from pto_wsp import DispatchPolicy
 
 # Round-robin across AICPUs
-schedule.dispatch(DispatchPolicy.round_robin(num_aicpus))
+schedule.dispatch(DispatchPolicy.round_robin(num_aicpus=4))
 
 # Same axis value → same AICPU
 schedule.dispatch(DispatchPolicy.affinity(lambda t: t.batch))
@@ -499,30 +488,22 @@ schedule.dispatch(DispatchPolicy.affinity(lambda t: t.batch))
 # Hash-based
 schedule.dispatch(DispatchPolicy.hash(lambda t: t.key))
 
-# Dynamic load balancing
-schedule.dispatch(DispatchPolicy.work_steal())
-
 # Custom function
 schedule.dispatch(DispatchPolicy.dispatch_by(lambda t: custom_logic(t)))
+
+# Note (v9): DispatchPolicy.work_steal() exists as API but is currently diagnosed/unsupported in v9 artifacts.
 ```
 
-### 4.3 Issue Policies
+### 4.3 Stream Assignment
+
+Stream assignment uses the `stream_by()` combinator method:
 
 ```python
-from pto_wsp import IssuePolicy
-
-# Stream assignment by key
-schedule.stream_by(lambda t: t.head % num_streams)
-
-# All tasks in single stream
-schedule.issue(IssuePolicy.single_stream())
-
-# Per-axis stream assignment
-schedule.issue(IssuePolicy.per_axis(axis))
-
-# Priority ordering
-schedule.issue(IssuePolicy.priority(lambda t: t.seq_len))
+# Stream assignment by key function
+schedule = workload.streams(4).stream_by(lambda t: t.get("head") % 4)
 ```
+
+> **Note (v9)**: `streams()` may affect worker count as a fallback, but `stream_by()` is not enforced in v9 artifacts.
 
 ### 4.4 Timing Policies
 
@@ -542,6 +523,8 @@ schedule.timing(TimingPolicy.interleaved(streams))
 schedule.timing(TimingPolicy.rate_limit(tasks_per_ms))
 ```
 
+> **Note (v9)**: `timing(...)` is currently diagnosed/ignored in v9 artifacts (it does not affect `total_cycles`).
+
 ### 4.5 Spatial Primitives (New in v9)
 
 ```python
@@ -551,319 +534,76 @@ schedule.spatial_map(grid=(4, 4))  # 4x4 tile array
 
 Note: Layout is a **type-level refinement** on tensors (see Section 2.3), not a schedule primitive. `spatial_map(grid=...)` defines the Mesh environment for validating `Shard(mesh_axis=...)` refinements.
 
-### 4.6 Extended Primitives (New in v9)
-
-These primitives are **strictly more powerful** than pto-isa-lh's runtime, providing fine-grained control over dispatch, pipelining, memory management, and dependency resolution.
-
-#### 4.6.1 dispatch_threshold()
-
-Multi-level dispatch based on thresholds (like binary expansion):
-
-```python
-from pto_wsp import Metric, PoolBy
-
-schedule = schedule.dispatch_threshold(
-    metric=Metric.num_tiles(),                  # or Metric.seq_len(), Metric.task(...)
-    thresholds=[256, 512, 1024, 2048, 4096],    # Typically power-of-2
-    policy_per_level={
-        0:    DispatchPolicy.round_robin(1),
-        256:  DispatchPolicy.round_robin(2),
-        512:  DispatchPolicy.round_robin(4),
-        1024: DispatchPolicy.work_steal(),
-    },
-    default=DispatchPolicy.work_steal(),
-    pool_by=PoolBy.exec_unit(),                 # Routes Vector/Cube to separate pools
-)
-```
-
-**Semantics**: Computes `v = metric(ctx)`, selects `level = max({t in thresholds | v >= t})`, applies corresponding policy. With `pool_by`, dispatch becomes 2-stage: choose pool (Vector/Cube), then target within pool.
-
-#### 4.6.2 pipeline_depth()
-
-Controlled in-flight issuing for double/triple buffering:
-
-```python
-schedule = schedule.pipeline_depth(
-    depth=2,                        # 1 disables pipelining
-    scope="per_stream",             # "global" | "per_stream" | "per_target" | "per_pool"
-    on_full="stall",                # "stall" | "spill_to_readyq" | "error"
-)
-```
-
-**Semantics**: Maintains token/semaphore per scope. Issuing consumes 1 token; completion returns 1 token. Orthogonal to `streams()`, `timing()`, and `dispatch()`.
-
-#### 4.6.3 task_window()
-
-Explicit task-metadata / dependency-state window sizing:
-
-```python
-schedule = schedule.task_window(
-    size=8192,
-    unit="tasks",                   # "tasks" | "bytes" | "cycles_est"
-    scope="global",                 # or "per_pool" | "per_stream"
-    overflow="stall",               # "stall" | "evict_completed" | "error"
-    min_size=1024, max_size=262144, # Optional bounds for auto-tuning
-)
-```
-
-**Semantics**: Maintains ring of task slots per scope with generation counters. On overflow, applies specified policy.
-
-#### 4.6.4 batch_deps()
-
-Batched dependency resolution for reduced overhead:
-
-```python
-schedule = schedule.batch_deps(
-    threshold=128,                  # Batch size before resolving deps
-    by="kernel",                    # "kernel" | "stream" | "dispatch_target" | "none"
-    mode="defer",                   # "defer" | "compress_ranges"
-    flush_on=["barrier", "kernel_change", "stream_boundary"],
-)
-```
-
-**Semantics**: Accumulates tasks, resolves dependencies in batch for locality/vectorization. `compress_ranges` represents patterned deps as compact descriptors.
-
-#### 4.6.5 Complete Example with Extended Primitives
+### 4.6 Complete Example
 
 ```python
 program = (workload
-    .dispatch_threshold(
-        metric=Metric.num_tiles(),
-        thresholds=[256, 512, 1024, 2048, 4096],
-        policy_per_level={0: RR(1), 256: RR(2), 512: RR(4), 1024: WS()},
-        pool_by=PoolBy.exec_unit())
-    .streams(4)
-    .pipeline_depth(2, scope="per_stream")
-    .task_window(size=8192, overflow="stall")
-    .batch_deps(threshold=128, by="kernel")
-    .timing(TimingPolicy.immediate)
-    .compile())
+    .dispatch(DispatchPolicy.round_robin(4))
+    .task_graph(window=TaskWindow(8192, "tasks", WindowMode.STALL))
+    .compile(target="cpu_sim"))
 ```
 
 ### 4.7 Task Graph Execution (New in v9 - R9)
 
-`task_graph()` provides an alternative to stream-based issuing, using **pto-isa-lh-compatible** DAG execution with TensorMap-based dependency inference. This achieves **strict coverage** of pto-isa-lh runtime capabilities.
+`task_graph()` configures DAG-style execution. In v9 codegen-first artifacts, only the **task_window (stall-only, unit=tasks)**
+behavior is enforced; other advanced task-graph knobs are currently API-only/diagnostic.
 
-**When to use task_graph vs streams:**
-
-| Criterion | Use `streams()` | Use `task_graph()` |
-|-----------|----------------|-------------------|
-| Dependency pattern | Linear pipelines, per-key ordering | General DAGs with fanin/fanout |
-| Dependency specification | Manual (structural + Events) | Automatic (inferred from tensor regions) |
-| Overhead | Lower | Higher (TensorMap, fanin/fanout tracking) |
-| pto-isa-lh compatibility | Partial | Full |
-
-#### 4.7.1 task_graph() Primitive
+Minimal v9 usage:
 
 ```python
-from pto_wsp import Deps, TaskWindow, Pools, ReadyPolicy, StartPolicy, TracePolicy
-
 program = (workload
-    .dispatch(DispatchPolicy.work_steal())
-    .task_graph(
-        # Dependency inference (pto-isa-lh compatible by default)
-        deps=Deps.infer_tensor_map_exact(),
-
-        # Sliding window (matches pto-isa-lh PTO_TASK_WINDOW_SIZE)
-        window=TaskWindow(tasks=8192, overflow="stall"),
-
-        # Pool routing (generalizes is_cube dual-queue)
-        pools=Pools.by_exec_unit(),
-
-        # Ready queue policy
-        ready=ReadyPolicy.work_steal(),
-
-        # Pipelined execution start
-        start=StartPolicy.threshold(1024),
-
-        # Cycle simulation/tracing
-        trace=TracePolicy.cycles(cost_fn=my_cost_fn),
-    )
-    .compile())
+    .dispatch(DispatchPolicy.round_robin(4))
+    .task_graph(window=TaskWindow(8192, "tasks", WindowMode.STALL))
+    .compile(target="cpu_sim"))
 ```
 
-#### 4.7.2 Dependency Inference Modes
-
-```python
-class Deps:
-    @staticmethod
-    def infer_tensor_map_exact() -> Deps:
-        """pto-isa-lh compatible: exact region key (ptr, offsets, extents)."""
-        ...
-
-    @staticmethod
-    def infer_bytes_overlap() -> Deps:
-        """Enhanced: detect overlapping byte ranges (handles shape mismatches)."""
-        ...
-
-    @staticmethod
-    def explicit_only() -> Deps:
-        """No inference; only structural + user-specified edges."""
-        ...
-
-    @staticmethod
-    def hybrid(infer: Deps = infer_tensor_map_exact(), explicit: bool = True) -> Deps:
-        """Union of inferred + structural + explicit edges (recommended)."""
-        ...
-```
-
-#### 4.7.3 TaskWindow Configuration
-
-```python
-class TaskWindow:
-    def __init__(
-        self,
-        tasks: int = 8192,           # Max pending tasks (like PTO_TASK_WINDOW_SIZE)
-        overflow: str = "stall",     # "stall" | "abort" | "benchmark"
-    ):
-        ...
-
-# Overflow modes (match pto-isa-lh):
-# - "stall": Block orchestration when full (PTO_MODE_EXECUTE/SIMULATE)
-# - "abort": Stop orchestration when full (PTO_MODE_DUMP_GRAPH)
-# - "benchmark": Fake-advance window (PTO_MODE_BENCHMARK_ONLY)
-```
-
-#### 4.7.4 Pool Routing
-
-```python
-class Pools:
-    @staticmethod
-    def single() -> Pools:
-        """Single ready queue (ARM64 mode)."""
-        ...
-
-    @staticmethod
-    def by_exec_unit() -> Pools:
-        """Dual queues: Vector vs Cube (A2A3 mode)."""
-        ...
-
-    @staticmethod
-    def custom(route_fn: Callable[[Task], int], num_pools: int) -> Pools:
-        """N-way routing by custom function."""
-        ...
-```
-
-#### 4.7.5 Ready Queue Policies
-
-```python
-class ReadyPolicy:
-    @staticmethod
-    def fifo() -> ReadyPolicy:
-        """First-in-first-out."""
-        ...
-
-    @staticmethod
-    def work_steal() -> ReadyPolicy:
-        """Work stealing across workers."""
-        ...
-
-    @staticmethod
-    def priority(key: Callable[[Task], int]) -> ReadyPolicy:
-        """Priority queue by key function."""
-        ...
-```
-
-#### 4.7.6 Unified Issue API (Alternative Design)
-
-For cleaner API, both streams and task_graph can be accessed via `.issue()`:
-
-```python
-# Stream-based (existing)
-program = workload.dispatch(...).issue(Issue.streams(count=4, by=..., timing=...)).compile()
-
-# Task-graph-based (new)
-program = workload.dispatch(...).issue(Issue.task_graph(deps=..., window=...)).compile()
-
-# Sugar methods (preserve backward compatibility)
-workload.streams(4)        # = workload.issue(Issue.streams(count=4))
-workload.task_graph(...)   # = workload.issue(Issue.task_graph(...))
-```
-
-#### 4.7.7 pto-isa-lh Coverage Checklist
-
-| pto-isa-lh Feature | v9 Coverage |
-|--------------------|-------------|
-| `PendingTask` (fanin/fanout, args, is_cube) | Task record in task_graph issuer |
-| TensorMap exact-key lookup | `Deps.infer_tensor_map_exact()` |
-| Sliding window (8192 slots) | `TaskWindow(tasks=8192, ...)` |
-| Window overflow modes | `overflow="stall"/"abort"/"benchmark"` |
-| Dual-queue (vector/cube) | `Pools.by_exec_unit()` |
-| Pipelined start threshold | `StartPolicy.threshold(n)` |
-| Cycle simulation | `TracePolicy.cycles(...)` |
+Advanced task-graph features (dependency inference modes, pools, ready/start/trace policies) are documented in `docs/design/`,
+but are not fully enforced in v9 artifacts.
 
 ### 4.8 Backend Applicability
 
-Different schedule primitives may not be applicable to all backends. The framework validates schedule primitives at compile time based on target backend capabilities.
+Different schedule primitives may not be applicable to all backends. In v9, PTO‑RT follows a
+**codegen-first** model: backend behavior is realized by the generated artifact, and unsupported
+schedule directives are either ignored with diagnostics or explicitly rejected (see below).
 
-#### 4.8.1 Backend Capability Table
+#### 4.8.1 v9 Enforcement Summary (as-built)
 
-| Primitive | CPU Sim | Ascend NPU | AMD AIE |
-|-----------|---------|------------|---------|
-| `dispatch(round_robin)` | ✓ | ✓ | ✗ |
-| `dispatch(work_steal)` | ✓ | ✓ | ✗ |
-| `streams()` | ✓ | ✓ | ✗ |
-| `task_graph()` | ✓ | ✓ | ✓ |
-| `spatial_map()` | ✗ | ✗ | ✓ |
-| `pipeline_depth()` | ✓ (tasks) | ✓ (tasks) | ✓ (FIFO) |
+| Primitive | CPU-sim artifact | Ascend NPU emission (this env) |
+|-----------|------------------|--------------------------------|
+| `dispatch(round_robin/hash/affinity/custom)` | **enforced** | **preserved in plan** |
+| `dispatch(work_steal)` | **unsupported** (diagnosed) | **unsupported** (annotated) |
+| `task_graph(window=TaskWindow(..., mode=STALL))` | **enforced** (stall-only) | **preserved in plan** |
+| `streams(n)` | **partial** (used only as worker-count fallback) | **unsupported** (annotated) |
+| `stream_by(...)` | **unsupported** (diagnosed) | **unsupported** (annotated) |
+| `timing(...)` | **unsupported** (diagnosed) | **unsupported** (annotated) |
 
-#### 4.8.2 Compile-Time Validation
-
-```python
-# Errors at compile time if schedule uses unsupported primitives
-program = (workload
-    .dispatch(DispatchPolicy.work_steal())  # ⚠️ Not supported on AIE
-    .spatial_map(grid=(4, 4))
-    .compile(target="amd_aie"))             # Error raised here
-```
-
-**Error message:**
-```
-ScheduleError: dispatch(work_steal) not supported for target 'amd_aie'
-  Hint: AMD AIE uses spatial_map() for task placement, not dispatch policies
-```
-
-#### 4.8.3 Backend-Specific Extensions
-
-```python
-# Backend extensions via qualified names
-from pto.rt.backend.ascend import double_buffer, prefetch
-from pto.rt.backend.aie import tile_placement
-
-program = (workload
-    .dispatch(DispatchPolicy.round_robin(4))
-    .streams(2)
-    .extend(double_buffer(scope="L1"))      # Ascend-specific
-    .compile(target="ascend_npu"))
-```
-
-#### 4.8.4 Backend Interface
-
-```cpp
-class Backend {
-public:
-    virtual bool supports(ir::NodeKind kind) const = 0;
-    virtual std::vector<std::string> supported_targets() const = 0;
-    // ...
-};
-```
+v9 does not guarantee deterministic interleavings; tests validate invariants (correctness + cycle-time accounting).
 
 ---
 
 ## 5. Compilation and Execution
 
+### 5.0 Execution Path
+
+PTO‑RT v9 uses a **codegen-first** compilation pipeline:
+
+1. Python authoring builds a workload tree + kernel IR (`@workload`, `@kernel`, `pto.*`, `ptoisa.*`).
+2. `python/pto_wsp/ir_bridge.py` converts the workload into a C++ `ir::Module` (via `pto_ir_cpp` bindings).
+3. C++ compilation/codegen emits backend artifacts:
+   - `target="cpu_sim"`: emits C++ sources, builds a cached `.so`, and executes it via `dlopen`.
+   - `target="ascend_npu"`: emits a host/AICPU/AICore source tree for inspection (device build/run requires Ascend/CANN).
+
+There is no Python threadpool fallback executor in v9.
+
 ### 5.1 compile()
 
 ```python
-# Compile to executable program
-program = schedule.compile()
+# Compile to executable program (CPU simulation)
+program = workload.compile(target="cpu_sim")
 
-# With options
-program = schedule.compile(
-    target="cpu_sim",  # or "ascend_npu", "amd_aie"
-    enable_profiling=True,
-    optimization_level=2
-)
+# Emit NPU sources (emit-only in this environment)
+program = workload.compile(target="ascend_npu")
+print(program.codegen_artifact_dir)
 ```
 
 ### 5.2 Program Class
@@ -874,10 +614,6 @@ class Program:
         """Execute the program."""
         ...
 
-    def execute_async(self) -> None:
-        """Start execution asynchronously."""
-        ...
-
     def synchronize(self) -> None:
         """Wait for completion."""
         ...
@@ -886,21 +622,38 @@ class Program:
         """Check if execution is done."""
         ...
 
-    def elapsed(self) -> float:
-        """Return execution time in seconds."""
+    @property
+    def stats(self) -> ProgramStats:
+        """Execution statistics (includes total_cycles)."""
         ...
 
-    def stats(self) -> ProgramStats:
-        """Return execution statistics."""
+    @property
+    def codegen_artifact_dir(self) -> str | None:
+        """For codegen-only targets (e.g. ascend_npu emit-only), emitted directory."""
         ...
 
 class ProgramStats:
-    num_tasks: int
-    num_streams: int
-    num_aicpus: int
     compile_time_ms: float
     execute_time_ms: float
+    task_count: int
+    total_cycles: int
 ```
+
+### 5.3 NPU emission and on-device expansion (v9)
+
+For `target="ascend_npu"`, v9 emits an artifact source tree that includes an AICPU “expander” translation unit that expands
+tasks on-device from a compact plan + runtime symbols. Full device build/execution is toolchain-gated (Ascend/CANN).
+
+`docs/design/on-device-task-gen.md` contains design exploration of a bytecode interpreter approach; treat that as future work unless
+explicitly implemented and validated in this repo.
+
+### 5.4 Deprecated / removed APIs (v9)
+
+- `Kernel.compile()` is not supported in v9 codegen-first mode; compile at the workload level via `workload.compile(target=...)`.
+- `Program.register_kernel(...)` is not supported in codegen-first mode.
+- `Workload.layout(...)` is deprecated (emits `DeprecationWarning`); use `TensorLayout` + `relayout(...)`.
+- `tl.*` is a deprecated alias for `pto.*`.
+- `task(kernel: str, ...)` exists for legacy enumerate-only workflows; prefer direct `@kernel` calls inside `@workload`.
 
 ---
 
@@ -910,46 +663,49 @@ PTO-RT v9 supports **JIT-style kernel definitions** that eliminate string-based 
 
 ### 6.1 The @jit_kernel Decorator (RECOMMENDED)
 
-The `@jit_kernel` decorator provides a Triton-style programming model with typed `Value` objects and `tl.*` primitives. This is the **recommended** approach for new code.
+The `@jit_kernel` decorator provides a Triton-style programming model with typed `Value` objects and `pto.*` primitives. This is the **recommended** approach for new code.
 
 ```python
-from pto_wsp import jit_kernel, tl, In, Out, Tile, Scalar
-from pto_wsp import F16, F32
+from pto_wsp import jit_kernel, pto, In, Out, Tile, Scalar, DType
 
 @jit_kernel
 def rmsnorm(
-    x: In[Tile[32, 128, F16]],
-    out: Out[Tile[32, 128, F16]],
-    eps: Scalar[F32] = 1e-6
+    x: In[Tile[32, 128, DType.F16]],
+    out: Out[Tile[32, 128, DType.F16]],
+    eps: Scalar[DType.F32] = 1e-6
 ):
     """RMS normalization kernel using typed Value objects.
 
     No string-based references - all operations return typed Values.
     """
     # All operations return Value objects (no strings!)
-    sq = tl.mul(x, x)              # sq: Value
-    mean = tl.rowmean(sq)          # mean: Value
-    rsqrt_val = tl.rsqrt(mean)     # rsqrt_val: Value
-    tl.store(out, tl.mul(x, rsqrt_val))
+    sq = pto.mul(x, x)              # sq: Value
+    mean = pto.rowmean(sq)          # mean: Value
+    rsqrt_val = pto.rsqrt(mean)     # rsqrt_val: Value
+    pto.store(out, pto.mul(x, rsqrt_val))
 ```
 
-**Tile Language Primitives (`tl.*`):**
+**Tile Language Primitives (`pto.*`):**
 
 | Category | Primitives |
 |----------|------------|
-| **Memory** | `tl.load(src)`, `tl.store(dst, src)`, `tl.alloc(shape, dtype)` |
-| **Arithmetic** | `tl.add(a, b)`, `tl.sub(a, b)`, `tl.mul(a, b)`, `tl.div(a, b)` |
-| **Math** | `tl.exp(x)`, `tl.log(x)`, `tl.sqrt(x)`, `tl.rsqrt(x)` |
-| **Reductions** | `tl.sum(x, axis)`, `tl.max(x, axis)`, `tl.rowmean(x)`, `tl.rowmax(x)` |
-| **Matrix** | `tl.matmul(a, b)`, `tl.transpose(x)` |
-| **Control** | `tl.where(cond, a, b)`, `tl.broadcast(x, shape)` |
+| **Memory** | `pto.load(src)`, `pto.store(dst, src)`, `pto.alloc(shape, dtype)` |
+| **Arithmetic** | `pto.add(a, b)`, `pto.sub(a, b)`, `pto.mul(a, b)`, `pto.div(a, b)`, `pto.maximum(a, b)`, `pto.minimum(a, b)` |
+| **Math** | `pto.exp(x)`, `pto.log(x)`, `pto.sqrt(x)`, `pto.rsqrt(x)`, `pto.tanh(x)`, `pto.sigmoid(x)`, `pto.sin(x)`, `pto.cos(x)` |
+| **Activations** | `pto.relu(x)`, `pto.gelu(x)`, `pto.silu(x)`, `pto.neg(x)`, `pto.abs(x)` |
+| **Reductions** | `pto.rowsum(x)`, `pto.rowmax(x)`, `pto.rowmean(x)`, `pto.colsum(x)`, `pto.colmax(x)` |
+| **Broadcast** | `pto.rowmul(tile, vec)`, `pto.rowadd(tile, vec)`, `pto.colmul(tile, vec)`, `pto.coladd(tile, vec)`, `pto.broadcast(x, shape)` |
+| **Matrix** | `pto.matmul(a, b, acc=None)` |
+| **Special** | `pto.constant(value, dtype)`, `pto.slice_even(x)`, `pto.slice_odd(x)`, `pto.interleave(a, b)` |
+
+> **v9 note (Path A):** `TopK` is not a PTO‑RT primitive (`pto.topk` is not supported). Implement TopK-style logic as a **custom kernel** using PTO‑ISA tile primitives via either `@ptoisa_kernel` (Python → emitted C++ body) or `@kernel(cpp_src=..., cpp_includes=...)` (manual C++).
 
 **Key Features:**
-- **Typed Values**: All `tl.*` operations return `Value` objects with type information
+- **Typed Values**: All `pto.*` operations return `Value` objects with type information
 - **No String References**: Unlike the legacy NPU builder, no string-based tile names
-- **Compile to Backend**: `kernel.compile(target="ascend_npu")` generates backend code
+- **Compile to Backend**: use `workload.compile(target=...)` to build codegen artifacts from the C++ IR module (**v9 does not support** `Kernel.compile()`).
 
-### 6.2 The @kernel Decorator (Builder-Style)
+### 6.2 The @kernel Decorator (Builder-Style + Custom C++ Kernels)
 
 The `@kernel` decorator is for simpler workload integration without explicit tile operations:
 
@@ -966,10 +722,23 @@ def flash_attn(
     """Flash attention kernel.
 
     The body can be:
-    1. Empty (external implementation)
-    2. Python implementation (for CPU sim)
+    1. Traced `pto.*` ops (JIT kernel IR)
+    2. Empty + a custom implementation (Path A):
+       - `@ptoisa_kernel` (Python authoring → emitted C++ body), or
+       - `@kernel(cpp_src=..., cpp_includes=...)` (manual C++ body)
     """
     pass  # Implementation provided externally or via CPU sim
+```
+
+**Custom kernel (Path A):**
+
+```python
+@kernel(
+  cpp_includes=["pto/cpu/TMrgSort.hpp"],
+  cpp_src=\"\"\"/* C++ body compiled into the artifact */\"\"\",
+)
+def topk_kernel(...):  # annotated params required
+    pass
 ```
 
 **Type Annotations:**
@@ -1056,11 +825,11 @@ flash_attn.compile(target="ascend_npu", BLOCK_M=128, BLOCK_N=64)
 `@jit_kernel` functions can be compiled to backend-specific code:
 
 ```python
-from pto_wsp import jit_kernel, tl
+from pto_wsp import jit_kernel, pto, DType
 
 @jit_kernel
-def my_kernel(x: In[Tile[M, N, F16]], out: Out[Tile[M, N, F16]]):
-    tl.store(out, tl.mul(x, x))
+def my_kernel(x: In[Tile[M, N, DType.F16]], out: Out[Tile[M, N, DType.F16]]):
+    pto.store(out, pto.mul(x, x))
 
 # Compile to specific target
 compiled = my_kernel.compile(target="ascend_npu")
@@ -1240,50 +1009,22 @@ program.execute()
 program.synchronize()
 ```
 
-### 8.4 Spatial Attention (AIE)
-
-```python
-from pto_wsp import workload, P, kernel, In, Out, Tensor, Dense
-from pto_wsp import Layout, Shard, Replicate
-
-# Axes
-batch = Dense[4]
-heads = Dense[4]
-
-# Define kernel with explicit layout annotations
-@kernel
-def attn_kernel(
-    Q: In[Tensor[F16, [N, D], TensorLayout(TensorShard(0), TensorReplicate())]],     # sharded on batch
-    K: In[Tensor[F16, [N, D], TensorLayout(TensorReplicate(), TensorShard(1))]],     # sharded on heads
-    V: In[Tensor[F16, [N, D], TensorLayout(TensorReplicate(), TensorShard(1))]],     # sharded on heads
-    O: Out[Tensor[F16, [N, D], TensorLayout(TensorShard(0), TensorShard(1))]]        # sharded on both
-): ...
-
-# Define workload (@workload + P namespace)
-@workload
-def spatial_attention(batch, heads):
-    for b, h in P(batch, heads):
-        attn_kernel[b, h](Q=Q[b,h], K=K[b], V=V[b], O=O[b,h])
-
-# Spatial schedule for 4x4 AIE array (combinator style)
-program = (spatial_attention(batch, heads)
-    .spatial_map(grid=(4, 4))
-    .compile(target="amd_aie"))
-
-program.execute()
-```
-
 ---
 
 ## 9. Error Handling
 
 ```python
 from pto_wsp import (
-    RuntimeError,
+    PtoError,
     CompileError,
+    TypeCheckError,
+    IRConversionError,
     ExecutionError,
+    KernelError,
+    ScheduleError,
     ChannelError,
     ChannelClosed,
+    ChannelFull,
 )
 
 try:
@@ -1322,7 +1063,7 @@ except ChannelClosed as e:
 3. **Combinator Schedule**: `workload.dispatch(...).streams(...)` for type-safe chaining
 4. **Type-safe**: Dependency types (Independent, Sequential, etc.) inferred from structure
 5. **Separable**: Workload vs Schedule separation enables reuse
-6. **Multi-backend**: Same workload targets CPU sim, NPU, AIE
+6. **Multi-backend**: Same workload targets CPU sim and Ascend NPU
 7. **Human-in-the-loop**: Programmer controls dispatch and issue policies
 8. **Backend Applicability**: Compile-time validation of schedule primitives per target
 

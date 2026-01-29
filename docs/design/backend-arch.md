@@ -6,11 +6,25 @@ This document specifies the backend architecture for v9 runtime extension, suppo
 
 1. **CPU Simulation Backend** - Fast iteration, debugging, reference implementation
 2. **Ascend NPU Backend** - Production deployment on 910B/910C/950
-3. **AMD AIE Backend** - Spatial architecture (XDNA1/XDNA2)
 
-### 1.1 Backend Interface
+### 1.1 Two-Phase Compilation Model
 
-All backends implement a common interface:
+All backends implement a common two-phase interface:
+
+```
+┌─────────────┐      ┌─────────────┐      ┌─────────────┐
+│  IR Module  │ ──→  │ LoweredPlan │ ──→  │   Program   │
+│             │      │             │      │             │
+│ - WorkloadDef     │ - Tasks      │      │ - execute() │
+│ - ScheduleDef     │ - Deps graph │      │ - sync()    │
+│ - NPUFunction     │ - Schedule   │      │ - stats()   │
+└─────────────┘      └─────────────┘      └─────────────┘
+      │                    │                    │
+      └── Phase 1: lower() ─┘                   │
+                           └── Phase 2: compile() ─┘
+```
+
+### 1.2 Backend Interface
 
 ```cpp
 namespace pto::wsp::backend {
@@ -19,20 +33,26 @@ class Backend {
 public:
     virtual ~Backend() = default;
 
-    // Compile IR to executable program
-    virtual std::unique_ptr<Program> compile(
-        const ir::WorkloadDef& workload,
-        const ir::ScheduleDef& schedule) = 0;
-
-    // Compile CSP pipeline
-    virtual std::unique_ptr<Program> compile(
-        const ir::PipelineNode& pipeline,
-        const ir::ScheduleDef& schedule) = 0;
-
-    // Query capabilities
-    virtual bool supports(ir::NodeKind kind) const = 0;
+    // Metadata
     virtual std::string name() const = 0;
     virtual std::vector<std::string> supported_targets() const = 0;
+    virtual bool supports(const ir::Module& module) const = 0;
+    virtual bool supports(ir::NodeKind kind) const = 0;
+
+    // Phase 1: Lower IR to backend-neutral LoweredPlan
+    virtual LoweredPlan lower(const ir::Module& module,
+                              const CompileOptions& options) = 0;
+
+    // Phase 2: Compile LoweredPlan to executable Program
+    virtual std::unique_ptr<Program> compile(const LoweredPlan& plan,
+                                              const CompileOptions& options) = 0;
+
+    // Convenience: Combined lower + compile
+    std::unique_ptr<Program> compile_module(const ir::Module& module,
+                                             const CompileOptions& options) {
+        auto plan = lower(module, options);
+        return compile(plan, options);
+    }
 };
 
 class Program {
@@ -56,6 +76,13 @@ struct ProgramStats {
     size_t num_executors;  // AICPUs, threads, tiles
     double compile_time_ms;
     double execute_time_ms;
+};
+
+struct LoweredPlan {
+    std::vector<TaskNode> tasks;  // Enumerated tasks
+    DependencyGraph deps;         // Task dependencies
+    ScheduleConfig schedule;      // Schedule configuration
+    KernelRegistry kernels;       // Compiled kernels
 };
 
 }  // namespace pto::wsp::backend
@@ -501,183 +528,7 @@ public:
 
 ---
 
-## 4. AMD AIE Backend
-
-### 4.1 Purpose
-
-- Target AMD XDNA1/XDNA2 (Ryzen AI NPU)
-- Spatial architecture with tile array
-- Stream-based communication
-- Layout-aware data distribution
-
-### 4.2 Architecture
-
-Based on allo and dato (Reports 15-16):
-
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                            AMD AIE Backend                                   │
-│                                                                              │
-│  ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────────────┐  │
-│  │   IR Lowering   │ -> │  Spatial Mapper │ -> │   MLIR Lowering         │  │
-│  │                 │    │                 │    │                         │  │
-│  │ - SpatialMap    │    │ - Task → Tile   │    │ - aie dialect           │  │
-│  │ - Layout        │    │ - Data layout   │    │ - memref/arith          │  │
-│  │ - Stream        │    │ - Stream route  │    │ - func                  │  │
-│  └─────────────────┘    └─────────────────┘    └─────────────────────────┘  │
-│                                                                              │
-│  ┌─────────────────────────────────────────────────────────────────────┐    │
-│  │                       Tile Placement                                 │    │
-│  │  WorkloadNode → (tile_x, tile_y, compute_kernel)                    │    │
-│  └─────────────────────────────────────────────────────────────────────┘    │
-│                                                                              │
-│  ┌─────────────────────────────────────────────────────────────────────┐    │
-│  │                       Data Distribution                              │    │
-│  │  Tensor → layout_per_tile (based on Shard/Replicate annotations)    │    │
-│  └─────────────────────────────────────────────────────────────────────┘    │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
-
-### 4.3 Spatial Mapper
-
-```cpp
-namespace pto::wsp::backend::aie {
-
-struct TilePlacement {
-    int tile_x;
-    int tile_y;
-    std::string kernel_name;
-    std::vector<std::string> resources;
-};
-
-struct StreamRoute {
-    int src_tile_x, src_tile_y;
-    int dst_tile_x, dst_tile_y;
-    std::string channel_name;
-    int bandwidth;
-};
-
-class SpatialMapper {
-public:
-    // Map workload to tile grid
-    std::vector<TilePlacement> map_workload(
-        const ir::WorkloadDef& workload,
-        const ir::SpatialMapNode& spatial_map);
-
-    // Route channels through tile array
-    std::vector<StreamRoute> route_channels(
-        const ir::PipelineNode& pipeline,
-        const std::vector<TilePlacement>& placements);
-
-    // Apply data layout
-    void apply_layout(const std::vector<ir::LayoutNode>& layouts,
-                      std::vector<TilePlacement>& placements);
-};
-
-}
-```
-
-### 4.4 Layout Application
-
-From dato paper (Report 16):
-
-```cpp
-namespace pto::wsp::backend::aie {
-
-// Layout descriptor for a tensor
-struct TensorLayout {
-    std::string tensor_name;
-    std::vector<ir::LayoutDim> dims;
-
-    // Compute local tile for given global coordinates
-    TileCoord get_tile(const std::vector<int64_t>& global_idx,
-                       const std::vector<int64_t>& grid) const;
-
-    // Compute local offset within tile
-    std::vector<int64_t> get_local_idx(const std::vector<int64_t>& global_idx,
-                                        const std::vector<int64_t>& grid) const;
-};
-
-class LayoutAnalyzer {
-public:
-    // Analyze layout requirements for workload
-    std::vector<TensorLayout> analyze(const ir::WorkloadDef& workload,
-                                       const std::vector<ir::LayoutNode>& layouts);
-
-    // Check layout compatibility for operations
-    bool are_compatible(const TensorLayout& a, const TensorLayout& b,
-                        ir::NodeKind op) const;
-};
-
-}
-```
-
-### 4.5 MLIR Lowering
-
-```cpp
-namespace pto::wsp::backend::aie {
-
-class MLIRLowering {
-    mlir::MLIRContext ctx;
-    mlir::OpBuilder builder;
-
-public:
-    MLIRLowering();
-
-    // Lower IR to MLIR module
-    mlir::OwningOpRef<mlir::ModuleOp> lower(
-        const ir::WorkloadDef& workload,
-        const ir::ScheduleDef& schedule,
-        const std::vector<TilePlacement>& placements);
-
-    // Lower CSP pipeline
-    mlir::OwningOpRef<mlir::ModuleOp> lower(
-        const ir::PipelineNode& pipeline,
-        const std::vector<TilePlacement>& placements,
-        const std::vector<StreamRoute>& routes);
-
-private:
-    // Lower individual nodes
-    mlir::Value lower_task(const ir::TaskNode& task);
-    mlir::Value lower_parallel_for(const ir::ParallelForNode& pf);
-    mlir::Value lower_channel(const ir::ChannelNode& ch);
-    mlir::Value lower_process(const ir::ProcessNode& proc);
-};
-
-}
-```
-
-### 4.6 Complete Backend
-
-```cpp
-namespace pto::wsp::backend::aie {
-
-class AMDAIEBackend : public Backend {
-    SpatialMapper mapper;
-    MLIRLowering lowering;
-
-public:
-    std::unique_ptr<Program> compile(
-        const ir::WorkloadDef& workload,
-        const ir::ScheduleDef& schedule) override;
-
-    std::unique_ptr<Program> compile(
-        const ir::PipelineNode& pipeline,
-        const ir::ScheduleDef& schedule) override;
-
-    bool supports(ir::NodeKind kind) const override;
-    std::string name() const override { return "amd_aie"; }
-    std::vector<std::string> supported_targets() const override {
-        return {"amd_aie", "xdna1", "xdna2"};
-    }
-};
-
-}
-```
-
----
-
-## 5. Backend Selection
+## 4. Backend Selection
 
 ### 5.1 Backend Registry
 
@@ -711,12 +562,6 @@ static bool register_npu = []() {
     return true;
 }();
 
-static bool register_aie = []() {
-    BackendRegistry::instance().register_backend(
-        std::make_unique<aie::AMDAIEBackend>());
-    return true;
-}();
-
 }
 ```
 
@@ -738,8 +583,6 @@ struct CompileOptions {
     int num_aicpus = 1;
     int num_streams = 2;
 
-    // AIE-specific
-    std::vector<int64_t> grid;  // Tile grid dimensions
 };
 
 // Compile with options
@@ -753,7 +596,7 @@ std::unique_ptr<Program> compile(const ir::Module& module,
 
 ## 6. Shared Infrastructure (Code Reuse Strategy)
 
-This section addresses requirement R6 from `docs/task_plan.md`: maximizing code reuse across backends while keeping backend-specific logic cleanly separated.
+This section addresses requirement R6: maximizing code reuse across backends while keeping backend-specific logic cleanly separated.
 
 ### 6.1 Design Principles
 
@@ -928,16 +771,20 @@ public:
 }
 ```
 
-### 6.4 Extended Primitives Lowering
+### 6.4 Task Graph Configuration Lowering
 
-How each extended primitive lowers to backend-specific form:
+> **Note**: The extended primitives (dispatch_threshold, pipeline_depth, batch_deps) from early v9 design were simplified. Use `task_graph()` with configuration classes instead.
 
-| Primitive | CPU Sim | Ascend NPU | AMD AIE |
-|-----------|---------|------------|---------|
-| `dispatch_threshold` | Evaluate metric → route to `ReadyQueueSet(pool)` | Select AIV/AIC pool, per-pool dispatch policy | Select mapping strategy (grid/tiling) |
-| `pipeline_depth` | Token gates per scope (global/stream/pool) | `in_flight < depth` counters in AICPU executor | FIFO/buffer depth between tiles |
-| `task_window` | Sliding window + TensorMap GC | Codegen-time capacity; `stall` enables pipelined build | Host-side descriptor queue bound |
-| `batch_deps` | Local batch map → global TensorMap; flush on barriers | "emit → flush → run" structure | Compile-time pass (explicit edges in MLIR) |
+How task graph configuration lowers to backend-specific form:
+
+| Configuration | CPU Sim | Ascend NPU |
+|--------------|---------|------------|
+| `Deps` | TensorMap exact-match or overlap detection | Same dependency tracking |
+| `TaskWindow` | Sliding window with configurable overflow mode | Codegen-time capacity |
+| `Pools` | Multiple ready queues by pool name | AIV/AIC dual-queue routing |
+| `ReadyPolicy` | FIFO queue or work-stealing deques | Same execution policies |
+| `StartPolicy` | Threshold-based pipelined start | Pipelined build + execute |
+| `TracePolicy` | Cycle simulation with cost model | Timing analysis |
 
 ### 6.5 Code Generation Templates
 
@@ -985,7 +832,6 @@ builder.submit(tid);
 | Template engine + common templates | ✓ | |
 | Thread pool implementation | | CPU sim |
 | Handshake protocol, AICPU/AICore build | | Ascend NPU |
-| Spatial mapper, MLIR lowering, XRT integration | | AMD AIE |
 
 ### 6.7 Header Organization
 
@@ -1005,30 +851,26 @@ include/pto/rt/
     └── ...               # CPU-specific
 └── backend/npu/
     └── ...               # NPU-specific
-└── backend/aie/
-    └── ...               # AIE-specific
 ```
 
 ---
 
-## 7. Backend Comparison
+## 6. Backend Comparison
 
-| Feature | CPU Sim | Ascend NPU | AMD AIE |
-|---------|---------|------------|---------|
-| **Primary Use** | Development | Production | Spatial workloads |
-| **Task Model** | Thread pool | AICPU + AICore | Tile array |
-| **Parallelism** | Thread-level | Task-level | Spatial + pipeline |
-| **Dependency** | fanin/fanout | Graph executor | Stream-based |
-| **Memory** | Host memory | HBM + UB | Tile-local + streams |
-| **Scheduling** | Work-stealing | Dispatch policy | Spatial mapping |
-| **CSP Support** | Full | Full | Native (streams) |
-| **Spatial Support** | Simulated | - | Native |
-| **Layout Support** | Simulated | - | Native |
-| **Extended Primitives** | All (runtime) | All (AICPU) | batch_deps compile-time only |
+| Feature | CPU Sim | Ascend NPU |
+|---------|---------|------------|
+| **Primary Use** | Development | Production |
+| **Task Model** | Thread pool | AICPU + AICore |
+| **Parallelism** | Thread-level | Task-level |
+| **Dependency** | fanin/fanout | Graph executor |
+| **Memory** | Host memory | HBM + UB |
+| **Scheduling** | Work-stealing | Dispatch policy |
+| **CSP Support** | Full | Full |
+| **Extended Primitives** | All (runtime) | All (AICPU) |
 
 ---
 
-## 8. Implementation Phases
+## 7. Implementation Phases
 
 ### Phase 5.1: Shared Infrastructure (R6)
 1. Implement `TaskNodePod`, `TaskGraphStorage` in `include/pto/rt/graph/`
@@ -1052,18 +894,11 @@ include/pto/rt/
 4. Implement `AscendNPUBackend` using shared infrastructure
 5. Integration tests
 
-### Phase 5.4 (P1): AMD AIE Backend
-1. Implement `SpatialMapper`
-2. Implement `LayoutAnalyzer`
-3. Implement `MLIRLowering`
-4. Implement `AMDAIEBackend`
-5. Integration tests
-
 ---
 
-## 9. Summary
+## 8. Summary
 
-### 9.1 Backend Interface (Two-Phase)
+### 8.1 Backend Interface (Two-Phase)
 
 ```cpp
 class Backend {
@@ -1078,15 +913,14 @@ class Backend {
 };
 ```
 
-### 9.2 Backend Implementations
+### 8.2 Backend Implementations
 
 | Backend | Class | Namespace |
 |---------|-------|-----------|
 | CPU Simulation | `CPUSimBackend` | `pto::wsp::backend::cpu` |
 | Ascend NPU | `AscendNPUBackend` | `pto::wsp::backend::npu` |
-| AMD AIE | `AMDAIEBackend` | `pto::wsp::backend::aie` |
 
-### 9.3 Shared Infrastructure
+### 8.3 Shared Infrastructure
 
 | Component | Location | Description |
 |-----------|----------|-------------|
@@ -1096,14 +930,13 @@ class Backend {
 | `ReadyQueueSet` | `graph/ready_queue.hpp` | Multi-queue task scheduling |
 | Window/Gate/Batcher | `graph/runtime.hpp` | Extended primitive support |
 
-### 9.4 Priority
+### 8.4 Priority
 
 | Backend | Priority | Rationale |
 |---------|----------|-----------|
 | Shared Infrastructure | P0 | Foundation for all backends |
 | CPU Simulation | P0 | Development, debugging |
 | Ascend NPU | P0 | Production deployment |
-| AMD AIE | P1 | Spatial architecture support |
 
 ---
 

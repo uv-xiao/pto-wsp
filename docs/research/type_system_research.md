@@ -31,7 +31,7 @@ Dato’s layout type is a **refinement** on a tensor type (`τ ::= D[n̄]@L`) wh
 - Elementwise: result layout is a “join” (`Lx ⊔ Ly`) — intuitively, `R ⊔ S(a) = S(a)` and `S(a) ⊔ S(b)` is invalid unless `a=b` (otherwise you need an explicit relayout/collective).
 - Reduce on sharded dim produces a **pending collective effect** that must be discharged by `allreduce` (Dato models this as an effect set Π).
 
-What v9 currently has: `Shard(dim=0)` / `Replicate()` as *schedule directives* (`docs/spec.md` “Spatial Primitives”, and IR `LayoutNode` in `docs/ir-design.md`). That’s the opposite of R10/R10-like guidance in `docs/comments.md`: layouts should be **types**, not schedule primitives.
+What v9 currently has: `Shard(dim=0)` / `Replicate()` as *schedule directives* (`docs/spec.md` “Spatial Primitives”, and IR `LayoutNode` in `docs/ir-design.md`). That’s the opposite of R10/R10-like guidance in `docs/archive/comments.md`: layouts should be **types**, not schedule primitives.
 
 ---
 
@@ -70,7 +70,7 @@ Static typing in Python won’t give you true dependent/refinement types, so the
 
 1) **Runtime type objects + validation** (primary)
 - `Layout`, `MemLayout`, `Shard/Replicate`, `TileShape`, etc. are runtime values.
-- The DSL builder validates constraints immediately (during workload/kernel construction), so errors surface early (as requested in `docs/comments.md`).
+- The DSL builder validates constraints immediately (during workload/kernel construction), so errors surface early (as requested in `docs/archive/comments.md`).
 
 2) **Type hints for UX + IDE help** (secondary)
 Use typing where it helps without fighting the language:
@@ -85,9 +85,9 @@ Avoid promising that mypy/pyright can prove layout correctness; instead, make th
 
 ## 5) Layout as a refinement type (R10): what changes in v9 design
 
-Target state (aligning `docs/comments.md` + Dato):
+Target state (aligning `docs/archive/comments.md` + Dato):
 - **Remove** `schedule.layout(...)` as a schedule primitive (and likely remove/repurpose IR `LayoutNode` as a “tensor type annotation” node).
-- Make layout part of tensor types: `Tensor[DType, Shape, Layout]` (your task plan already points here in spirit: `docs/task_plan.md` R10 items).
+- Make layout part of tensor types: `Tensor[DType, Shape, Layout]`.
 - `spatial_map(grid=...)` remains schedule-level, but it becomes the *environment* that validates `Shard(mesh_axis=...)` refinements.
 
 You still need an *explicit* operation when layouts are incompatible:

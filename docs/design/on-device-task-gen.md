@@ -1,16 +1,26 @@
 # On-Device Task Generation Design for PTO-RT v9
 
+> **Status (as-built):** PTO‑RT v9 currently emits an **AICPU expander C++ translation unit** during NPU codegen
+> (`target="ascend_npu"`). This document describes a **bytecode interpreter** approach that is a design exploration /
+> future direction unless explicitly implemented and validated in this repo.
+
 ## Executive Summary
 
 This document describes the on-device task generation architecture for PTO-RT v9, which represents a fundamental shift from the host-side task expansion approach used in pto-isa-lh/wc.
 
 **Key Insight**: Workload is a **program** that generates tasks, not a **list** of tasks.
 
-Instead of expanding workloads into individual task structures on the host CPU and transferring them to the device, we:
-1. Compile workload IR to compact bytecode
-2. Transfer bytecode to each AICPU (~4KB vs ~400MB)
-3. Each AICPU interprets bytecode and generates only its own tasks locally
-4. Task generation is pipelined with task execution
+Two viable approaches exist:
+
+1) **As-built (v9 today): generated expander**
+- Compile workload IR to a compact plan + **generated AICPU expander C++**.
+- Upload plan + runtime symbols; AICPU expansion runs on-device.
+
+2) **Design exploration (this document): bytecode interpreter**
+- Compile workload IR to compact bytecode
+- Transfer bytecode to each AICPU (~4KB vs ~400MB)
+- Each AICPU interprets bytecode and generates only its own tasks locally
+- Task generation is pipelined with task execution
 
 ## 1. Problem Analysis
 

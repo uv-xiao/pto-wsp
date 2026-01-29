@@ -16,6 +16,12 @@ PTO Workload-Schedule Programming (PTO-WSP) framework enables dynamic LLM worklo
 6. **Type System** - Layout types, type checking
 7. **C++ Backend** - IR, codegen, backends
 
+### Status vocabulary (v9)
+
+- **✓ Done**: feature exists; see per-section notes for whether it is **enforced** vs **API-only** in v9 artifacts.
+- **Partial**: feature surface exists but enforcement is limited (usually “diagnosed/ignored”).
+- **Removed**: legacy surface intentionally removed in v9.
+
 ---
 
 ## Quick Reference
@@ -28,11 +34,11 @@ PTO Workload-Schedule Programming (PTO-WSP) framework enables dynamic LLM worklo
 | @kernel decorator | `pto_wsp.builder` | ✓ Done | [Details](#4-kernel-decorator) |
 | P namespace | `pto_wsp.p_namespace` | ✓ Done | [Details](#5-p-namespace) |
 | JIT Kernel API | `pto_wsp.kernel` | ✓ Done | [Details](#6-jit-kernel-api) |
-| NPU Function Builder (Legacy) | `pto_wsp.npu` | Legacy | [Details](#7-npu-function-builder-legacy) |
-| Schedule Combinator API | `pto_wsp.workload` | ✓ Done | [Details](#8-schedule-combinator-api) |
-| Task Graph (R9) | `pto_wsp.schedule` | ✓ Done | [Details](#9-task-graph-r9) |
-| Extended Schedule Primitives | `pto_wsp.schedule` | ✓ Done | [Details](#10-extended-schedule-primitives) |
-| CSP Primitives | `pto_wsp.csp` | ✓ Done | [Details](#11-csp-primitives) |
+| NPU Function Builder (Removed) | N/A | Removed | [Details](#7-npu-function-builder-removed) |
+| Schedule Combinator API | `pto_wsp.workload` | Partial (v9 runtime subset) | [Details](#8-schedule-combinator-api) |
+| Task Graph (R9) | `pto_wsp.schedule` | Partial (v9: task_window stall) | [Details](#9-task-graph-r9) |
+| Schedule Configuration Classes | `pto_wsp.schedule` | API-only / not enforced | [Details](#10-schedule-configuration-classes) |
+| CSP Primitives | `pto_wsp.csp` | Partial (CPU-sim CSPT) | [Details](#11-csp-primitives) |
 | Layout Types (R10) | `pto_wsp.types` | ✓ Done | [Details](#12-layout-types-r10) |
 | Linear Layout (F₂) | `pto_wsp.linear_layout` | ✓ Done | [Details](#13-linear-layout-f2) |
 | Type Checker | `pto_wsp.type_checker` | ✓ Done | [Details](#14-type-checker) |
@@ -210,71 +216,77 @@ with P.otherwise():
 This is the primary API for NPU kernel programming, replacing the legacy string-based builder (L3 requirement).
 
 ```python
-from pto_wsp.kernel import jit_kernel, tl, Value, DType
+from pto_wsp import DType, In, Out, Tile, kernel, pto
 
-@jit_kernel
-def rmsnorm_kernel(x, out):
-    """RMSNorm using typed operations (not string-based)."""
-    sq = tl.mul(x, x)              # Typed binary op
-    mean = tl.rowmean(sq)          # Typed reduction
-    rsqrt_val = tl.rsqrt(mean)     # Typed unary op
-    result = tl.mul(x, rsqrt_val)
-    tl.store(out, result)
-
-# Trace kernel with typed Values
-x = Value.tile(32, 128, DType.F16)
-out = Value.tile(32, 128, DType.F16)
-ir = rmsnorm_kernel(x=x, out=out)
-
-# Compile for Ascend
-compiled = rmsnorm_kernel.compile(target="ascend")
-print(compiled.code)  # Generated PTO-ISA code
+@kernel
+def rmsnorm_kernel(x: In[Tile[32, 128, DType.F16]], out: Out[Tile[32, 128, DType.F16]]):
+    sq = pto.mul(x, x)
+    mean = pto.rowmean(sq)
+    rsqrt_val = pto.rsqrt(mean)
+    pto.store(out, pto.mul(x, rsqrt_val))
 ```
 
-**Tile Language Primitives** (`tl.*`):
+**Tile Language Primitives** (`pto.*`):
+
+The tracing IR supports a broad set of operations, but v9 **codegen-first CPU-sim** correctness is validated for the
+subset exercised by examples/tests. Supported-by-codegen operations include:
 
 | Category | Operations |
 |----------|------------|
-| Binary | `tl.add`, `tl.mul`, `tl.sub`, `tl.div`, `tl.max`, `tl.min` |
-| Unary | `tl.exp`, `tl.rsqrt`, `tl.neg`, `tl.abs`, `tl.tanh`, `tl.sigmoid` |
-| Reduction | `tl.rowsum`, `tl.rowmax`, `tl.rowmean`, `tl.colsum` |
-| Memory | `tl.load`, `tl.store` |
-| MatMul | `tl.matmul` |
+| Binary | `pto.add`, `pto.mul`, `pto.sub`, `pto.div`, `pto.max`, `pto.min` |
+| Unary | `pto.exp`, `pto.rsqrt` |
+| Reduction | `pto.rowsum`, `pto.rowmax`, `pto.rowmean` |
+| Memory | `pto.load`, `pto.store` |
+| MatMul | `pto.matmul` |
 
-**Key advantage**: Uses `Value` objects with integer IDs instead of string names, enabling type checking at trace time.
+**Not supported in v9 codegen-first mode:** `Kernel.compile()` (compile kernels in isolation).
+Use `workload.compile(target=...)` to build runnable artifacts from the C++ IR module.
+
+**Path A (custom PTO‑ISA kernels):**
+Some functionality (e.g., TopK/sorting primitives) is intentionally **not** exposed as a PTO‑RT primitive op.
+Instead, author kernels using PTO‑ISA tile primitives and compile them into the codegen artifact via either:
+
+- `@ptoisa_kernel` (Python authoring → emits a C++ kernel body automatically), or
+- `@kernel(cpp_src=..., cpp_includes=...)` (manual C++ body; escape hatch).
+
+Additionally, if you want to keep kernel code in a standalone C++ file, use:
+
+- `@kernel(cpp_body_path="path/to/snippet.cpp")` (file contains a *body snippet* inserted into the generated wrapper), or
+- `@kernel(cpp_tu_path="path/to/kernel.cpp")` (file contains a full translation unit with an `extern "C"` kernel definition).
+
+**Three kernel-authoring modes (v9):**
+- `pto.*` IR-traced kernels lowered to PTO‑ISA calls (default)
+- `ptoisa.*` instruction-traced kernels (`@ptoisa_kernel`)
+- file-based custom C++ kernels (`cpp_body_path` / `cpp_tu_path`)
 
 **Code**: `python/pto_wsp/kernel.py`
 **Docs**: `docs/design/npu-design.md`
 
 ---
 
-### 7. NPU Function Builder (Legacy)
+### 7. NPU Function Builder (Removed)
 
-> **Note**: This is the legacy API. Use `@jit_kernel` with `tl.*` primitives instead (Section 6).
+> **Note**: The legacy string-based NPU function builder (`npu()`) has been removed in v9.
+> Use `@jit_kernel` with `pto.*` primitives instead (Section 6).
 
-**Purpose**: String-based NPU function construction (deprecated in favor of JIT Kernel API).
+The legacy API used string-based tile/memref names which were error-prone:
 
 ```python
-from pto_wsp import npu, DType
+# REMOVED in v9 - use @jit_kernel instead
+# rmsnorm = npu("rmsnorm").tile("x", ...).mul("sq", "x", "x")...
 
-# Legacy: Uses string-based tile/memref names
-rmsnorm = (npu("rmsnorm")
-    .tile("x", 32, 128, dtype=DType.F16)
-    .tile("out", 32, 128, dtype=DType.F16)
-    .memref("input", DType.F16, is_input=True)
-    .memref("output", DType.F16, is_output=True)
-    .load("x", "input")
-    .mul("sq", "x", "x")
-    .rowmean("mean", "sq")
-    .rsqrt("rsqrt_val", "mean")
-    .rowexpandmul("out", "x", "rsqrt_val")
-    .store("output", "out")
-    .build())
+# NEW (v9) - Use typed Values with pto.* primitives:
+from pto_wsp import jit_kernel, pto, In, Out, Tile, DType
+
+@jit_kernel
+def rmsnorm(x: In[Tile[32, 128, DType.F16]], out: Out[Tile[32, 128, DType.F16]]):
+    sq = pto.mul(x, x)              # Returns Value (typed!)
+    mean = pto.rowmean(sq)          # No string refs
+    rsqrt_val = pto.rsqrt(mean)
+    pto.store(out, pto.mul(x, rsqrt_val))
 ```
 
-**Why deprecated**: String-based references are error-prone and don't support compile-time type checking.
-
-**Code**: `python/pto_wsp/npu.py`
+**Why removed**: String-based references were error-prone and didn't support compile-time type checking. The `@jit_kernel` decorator with `pto.*` primitives provides full type safety and IDE support.
 
 ---
 
@@ -284,13 +296,23 @@ rmsnorm = (npu("rmsnorm")
 
 **Purpose**: Type-safe schedule composition through method chaining.
 
+**v9 runtime support (codegen-first CPU-sim artifacts):**
+- **Supported semantics:** `dispatch(...)` and `task_graph(window=TaskWindow(..., mode=STALL))` (stall-only task_window).
+- **Metrics:** `Program.stats.total_cycles` is derived from **PTO-ISA kernel cycle reports** (makespan / CSPT time).
+- **Not enforced in v9 artifacts:** `stream_by`, `timing`, advanced task-graph config (deps/pools/ready/start/trace). These are either ignored or explicitly diagnosed.
+- **NPU emission:** preserves `dispatch` + `task_window`; other schedule knobs are explicitly marked unsupported in emitted sources.
+- **Tensor-driven predicates (v9):** artifacts provide runtime u64 slots for data-dependent control via:
+  - `slot_load_u64(slot, tensor_view, row=0, col=0)` (load tensor element into slot)
+  - `slot_set_u64(slot, value)` (tests/debug)
+  - `slot_u64(i)` in `ScalarExpr` predicates/keys (e.g., for `cond(...)`)
+
 ```python
+from pto_wsp import DispatchPolicy, TaskWindow, WindowMode
+
 program = (workload
-    .dispatch(DispatchPolicy.round_robin(4))  # Task→executor
-    .streams(2)                                # Concurrent streams
-    .stream_by(lambda t: t.get("head") % 2)   # Stream assignment
-    .timing(TimingPolicy.immediate)            # Issue timing
-    .compile(target="cpu_sim"))                # Compile
+    .dispatch(DispatchPolicy.round_robin(4))   # Task→worker assignment
+    .task_graph(window=TaskWindow(8192, "tasks", WindowMode.STALL))  # task_window (stall-only)
+    .compile(target="cpu_sim"))
 ```
 
 **Available methods**:
@@ -301,7 +323,7 @@ program = (workload
 | `.streams(count)` | Number of concurrent streams |
 | `.stream_by(fn)` | Stream assignment function |
 | `.timing(policy)` | Task issue timing |
-| `.spatial_map(grid)` | Tile grid mapping |
+| `.spatial_map(grid)` | Tile grid mapping (API-only / no-op in v9 artifacts) |
 | `.task_graph(...)` | DAG-based execution (see next) |
 | `.compile(target)` | Compile to executable |
 
@@ -313,6 +335,10 @@ program = (workload
 ### 9. Task Graph (R9)
 
 **Purpose**: DAG-based execution as alternative to streams, matching pto-isa-lh capabilities.
+
+**v9 runtime status:** Only `TaskWindow(..., mode=STALL, unit="tasks")` is enforced as a `task_window` constraint in the
+codegen-first CPU-sim artifact. Other task-graph configuration parameters are currently **not** enforced by the v9 artifact
+runtime and should be treated as API placeholders (they may be ignored/diagnosed).
 
 ```python
 from pto_wsp import (
@@ -360,35 +386,48 @@ program = (workload
 
 ---
 
-### 10. Extended Schedule Primitives
+### 10. Schedule Configuration Classes
 
-**Purpose**: Advanced dispatch and issue control for large workloads.
+**Purpose**: Task graph configuration primitives for fine-grained control.
+
+The extended schedule primitives (dispatch_threshold, pipeline_depth, etc.) from early v9 design were simplified.
+
+**v9 runtime status:** these configuration classes exist for API completeness, but (beyond `TaskWindow(..., mode=STALL, unit="tasks")`)
+they are **not enforced** by the codegen-first v9 artifact runtime yet.
 
 ```python
-# Multi-level dispatch based on workload size
-workload.dispatch_threshold(
-    thresholds=[256, 1024, 4096],
-    policies={
-        256: DispatchPolicy.round_robin(1),
-        1024: DispatchPolicy.affinity(lambda t: t.batch),
-        4096: DispatchPolicy.work_steal(),
-    }
+from pto_wsp import (
+    Deps, TaskWindow, WindowMode, Pools,
+    ReadyPolicy, StartPolicy, TracePolicy
 )
 
-# In-flight task control (double/triple buffering)
-workload.pipeline_depth(2, scope="per_stream")
-
-# Task metadata window management
-workload.task_window(8192, unit="tasks", mode="stall")
-
-# Batched dependency resolution
-workload.batch_deps(64, range_compression=True)
+# Configure task graph execution with fine-grained control
+program = (workload
+    .dispatch(DispatchPolicy.work_steal())
+    .task_graph(
+        deps=Deps.infer_tensor_map_exact(),      # Dependency inference
+        window=TaskWindow(8192, "tasks", WindowMode.STALL),  # Window management
+        pools=Pools.by_exec_unit(),              # Pool routing
+        ready=ReadyPolicy.work_steal(),          # Ready queue policy
+        start=StartPolicy.threshold(100),        # Execution start
+        trace=TracePolicy.cycles()               # Cycle simulation
+    )
+    .compile())
 ```
 
-**Note**: Per L10 requirement, consider using only `dispatch_threshold` for simplicity.
+**Available configuration classes**:
+
+| Class | Purpose | Options |
+|-------|---------|---------|
+| `Deps` | Dependency inference | `infer_tensor_map_exact()`, `infer_bytes_overlap()`, `explicit()`, `hybrid()` |
+| `TaskWindow` | Metadata window | `TaskWindow(size, unit, mode)` |
+| `WindowMode` | Overflow behavior | `STALL`, `ABORT`, `BENCHMARK` |
+| `Pools` | Execution pools | `single()`, `by_exec_unit()`, `custom()` |
+| `ReadyPolicy` | Ready queue | `fifo()`, `work_steal()`, `priority(fn)` |
+| `StartPolicy` | Start timing | `after_orchestration()`, `threshold(n)` |
+| `TracePolicy` | Tracing | `none()`, `cycles(cost_fn)` |
 
 **Code**: `python/pto_wsp/schedule.py`
-**Docs**: `docs/research/extended_primitives_research.md`
 
 ---
 
@@ -398,13 +437,21 @@ workload.batch_deps(64, range_compression=True)
 
 **Purpose**: Pipeline-parallel programming with channels and processes.
 
+**v9 runtime support:**
+- **CPU-sim (codegen-first):** CSP pipelines execute inside the generated artifact with CSPT time semantics.
+  - Timebase: **PTO-ISA kernel cycle reports** + constant channel latency (default `0`).
+  - Latency override without rebuild: runtime symbol `__pto_wsp_channel_latency_cycles`.
+- **NPU:** emission preserves `dispatch` + `task_window` scheduling info; CSP runtime execution on-device requires CANN/toolchain (not runnable in this environment).
+
+**Not codegenned in v9:** the Python convenience helpers `record/synchronize/query` are not part of the codegen-first CSP path.
+Use `Channel(depth=0)` rendezvous channels + `send/consume` to express synchronization in workloads.
+
 ```python
-from pto_wsp import Channel, Event, process, send, consume, connect, replicate
-from pto_wsp import record, synchronize, query
+from pto_wsp import Channel, process, send, consume, connect, replicate
 
 # Create channels
 ch = Channel("data", depth=2)  # Buffered channel
-event = Event("sync")          # Unbuffered (rendezvous)
+event = Channel("sync", depth=0)  # Unbuffered (rendezvous)
 
 # Define processes
 loader = (process("loader")
@@ -422,11 +469,6 @@ pipeline = connect([loader, computer], [ch])
 # Replicate for parallelism
 workers = replicate(worker, 4)
 
-# Event synchronization
-record(event)      # Signal completion
-synchronize(event) # Wait for signal
-if query(event):   # Non-blocking check
-    ...
 ```
 
 **Primitives**:
@@ -434,15 +476,12 @@ if query(event):   # Non-blocking check
 | Primitive | Purpose |
 |-----------|---------|
 | `Channel(name, depth)` | Bounded FIFO queue |
-| `Event(name)` | Unbuffered sync (depth=0) |
 | `process(name)` | Process builder |
 | `send(ch, val)` | Send to channel |
 | `consume(ch, fn)` | Receive and process |
 | `connect(procs, chs)` | Wire pipeline |
 | `replicate(proc, n)` | Create n instances |
-| `record(event)` | Signal event |
-| `synchronize(event)` | Wait for event |
-| `query(event)` | Non-blocking check |
+| `Channel(name, depth=0)` | Rendezvous-style sync |
 
 **Code**: `python/pto_wsp/csp.py`
 **Docs**: `docs/spec.md` Section 6
@@ -729,7 +768,6 @@ namespace pto::wsp::concurrent {
 enum class ExecDomain {
     HostCPU,       // CPU simulation
     AscendAICore,  // Ascend NPU core
-    AMDAIETile,    // AMD AIE tile
     Generic
 };
 ```
@@ -738,18 +776,108 @@ enum class ExecDomain {
 
 ---
 
+### 18. On-Device Task Generation
+
+**Purpose**: Efficient task generation on AICPU instead of host-side expansion.
+
+**Key insight**: Workload is a **program** that generates tasks, not a **list** of tasks.
+
+```
+Host-side expansion (pto-isa-lh):
+- Expand parallel_for → O(N) task structures
+- Transfer ~400MB to device
+- High latency before execution starts
+
+On-device generation (PTO-RT v9):
+- Compile workload → ~4KB bytecode
+- Transfer bytecode to each AICPU
+- Each AICPU generates only its own tasks
+- Pipelined with execution (low latency)
+```
+
+**Bytecode format:**
+
+```cpp
+enum class WLOpcode : uint8_t {
+    PARALLEL_FOR    = 0x10,  // axis_id, body_offset
+    TASK            = 0x20,  // kernel_id, params, resources
+    DISPATCH_FILTER = 0x40,  // which AICPU owns this task
+};
+
+struct WorkloadBytecode {
+    uint32_t magic;           // 0x50544F57 = "PTOW"
+    uint32_t version;
+    uint32_t num_instructions;
+    // Followed by instructions
+};
+```
+
+**Interpreter on AICPU:**
+
+```cpp
+void WorkloadInterpreter::interpret() {
+    while (pc < bytecode->num_instructions) {
+        switch (instr->opcode) {
+        case WLOpcode::PARALLEL_FOR:
+            for (int32_t i = 0; i < extent; i++) {
+                push_loop(i);
+                interpret_body();  // Recursive
+                pop_loop();
+            }
+            break;
+
+        case WLOpcode::TASK:
+            if (evaluate_dispatch_predicate()) {
+                emit_task(instr);  // Only my tasks
+            }
+            break;
+        }
+    }
+}
+```
+
+**Benefits:**
+
+| Metric | Host Expansion | On-Device Gen |
+|--------|----------------|---------------|
+| Data Transfer | ~400MB | ~4KB |
+| Startup Latency | High | Low (pipelined) |
+| Dynamic Shapes | Rebuild graph | Same bytecode |
+| Memory | O(tasks) on host | O(1) bytecode |
+
+**Code**: `include/pto/rt/backend/` (on-device generation infrastructure)
+**Docs**: `docs/design/on-device-task-gen.md`
+
+---
+
 ## Test Coverage
 
 | Component | Test File | Count |
 |-----------|-----------|-------|
-| Python Frontend | `tests/test_python_frontend.py` | 118 |
-| End-to-End | `tests/test_e2e.py` | 33 |
+| Python Frontend | `tests/test_python_frontend.py` | 134 |
+| End-to-End | `tests/test_e2e.py` | 40 |
 | Linear Layout | `tests/test_linear_layout.py` | 32 |
 | Pybind Integration | `tests/test_pybind_integration.py` | 32 |
-| C++ IR | `tests/test_ir.cpp` | 29 |
-| C++ Graph | `tests/test_graph.cpp` | 16 |
-| C++ Backend | `tests/test_backend.cpp` | 21 |
-| **Total** | | **281** |
+| C++ IR | `tests/test_ir.cpp` | 30 |
+| C++ Graph | `tests/test_graph.cpp` | 17 |
+| C++ Backend | `tests/test_backend.cpp` | 28 |
+| **Total** | | **313** |
+
+---
+
+---
+
+## Implementation Notes
+
+This section is intentionally high-level. For the authoritative “as-built” guide (code pointers + diagrams), see
+`docs/implementation.md`.
+
+Key v9 behaviors:
+
+- **Codegen-first execution:** semantics live in generated artifacts (CPU-sim) / emitted source tree (NPU).
+- **Cycles/time:** derived strictly from PTO-ISA kernel cycle reports (no separate estimator).
+- **Scheduling (CPU-sim):** `dispatch` + `task_window` (stall-only) are behavior-changing; other knobs are ignored/diagnosed.
+- **CSP/CSPT (CPU-sim):** pipeline workloads execute inside the artifact; channel latency is constant (default `0`, symbol override).
 
 ---
 
@@ -760,4 +888,4 @@ enum class ExecDomain {
 | Design | `docs/analysis.md` (WHY), `docs/spec.md` (WHAT) |
 | Detailed Design | `docs/design/ir-design.md`, `docs/design/backend-arch.md`, `docs/design/type-system.md`, `docs/design/npu-design.md` |
 | Research | `docs/reference/` (external), `docs/research/` (working) |
-| Planning | `docs/task_plan.md`, `docs/comments.md` |
+| Historical notes | `docs/archive/comments.md` |
