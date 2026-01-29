@@ -11,32 +11,32 @@ sys.path.insert(0, str(_HERE.parent / "_harness"))
 sys.path.insert(0, str(_HERE))
 
 from harness import CycleCheck, run_example  # noqa: E402
-from golden import moe_ref  # noqa: E402
-from pto_wsp_impl import run_moe_block  # noqa: E402
+from golden import decode_attention_ref  # noqa: E402
+from pto_wsp_impl import run_decode_attention  # noqa: E402
 
 
 def main() -> bool:
-    seq, d, tile_seq = 16, 8, 8
+    d = 16
+    kv = 64
     seed = 0
 
     rng = np.random.default_rng(seed)
-    x = rng.standard_normal((seq, d), dtype=np.float32)
-    w0 = rng.standard_normal((d, d), dtype=np.float32)
-    w1 = rng.standard_normal((d, d), dtype=np.float32)
-    g = rng.random((seq, 1), dtype=np.float32)
+    q = rng.standard_normal((1, d), dtype=np.float32)
+    k = rng.standard_normal((kv, d), dtype=np.float32)
+    v = rng.standard_normal((kv, d), dtype=np.float32)
 
     try:
         run_example(
-            "deepseek_v3",
-            run_pto=lambda: run_moe_block(x, w0, w1, g),
-            run_golden=lambda: moe_ref(x, w0, w1, g),
+            "flashinfer_decode",
+            run_pto=lambda: run_decode_attention(q, k, v),
+            run_golden=lambda: decode_attention_ref(q, k, v),
             rtol=1e-5,
             atol=1e-6,
-            cycles=CycleCheck(expected=1408, rel_tol=0.20, min_cycles=1),
+            cycles=CycleCheck(expected=4514, rel_tol=0.20, min_cycles=1),
         )
         return True
     except Exception as e:  # noqa: BLE001
-        print(f"deepseek_v3: FAIL ({e})")
+        print(f"flashinfer_decode: FAIL ({e})")
         return False
 
 

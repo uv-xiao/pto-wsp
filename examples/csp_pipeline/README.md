@@ -1,158 +1,48 @@
-# CSP Pipeline Example
+# CSP Pipeline Example (validated)
 
-This example demonstrates CSP (Communicating Sequential Processes) primitives for pipeline-parallel execution in PTO-RT v9.
+This example demonstrates **codegen-first CSP/CSPT** execution in **CPU-sim** using:
 
-## Overview
+- `Channel`, `process`, `send`, `consume`, `connect`
+- strict timebase in **PTO-ISA cycles**
+- constant channel latency (default `0`, controlled by runtime symbol `__pto_wsp_channel_latency_cycles`)
 
-The example implements a three-stage data processing pipeline:
+## What this example computes
+
+For each tile `t`, compute:
 
 ```
-┌──────────┐    Channel    ┌──────────┐    Channel    ┌──────────┐
-│  Loader  │──────────────>│ Computer │──────────────>│  Storer  │
-└──────────┘ load_to_compute └──────────┘ compute_to_store └──────────┘
-     │                           │                           │
-   F32→F16                   square                      F16→F32
+Y[t] = X[t] * X[t]
 ```
 
-## CSP Primitives Demonstrated
+The pipeline is split into three sequential processes:
 
-### 1. Channel[T] - Typed Communication
-```python
-ch = Channel[Tensor](name="data_channel", depth=2)
 ```
-- Bounded, typed channel for inter-process communication
-- `depth` controls buffer size (backpressure when full)
-
-### 2. Process - Pipeline Stage
-```python
-loader = (Process("loader")
-    .produces(channel)
-    .body_func(lambda: [...]))
-```
-- Named process with explicit input/output channels
-- `.consumes()` - declares input channel
-- `.produces()` - declares output channel
-
-### 3. send/consume - Channel Operations
-```python
-send(channel, kernel(...))      # Send data to channel
-consume(channel, lambda data:   # Receive and process
-    compute(data))
+  loader        computer        storer
+    |             |              |
+    v             v              v
+  load_tile --> square_tile --> store_tile
+      (T0)        (T1)            (Y)
 ```
 
-### 4. connect - Pipeline Composition
-```python
-pipeline = connect(loader, computer, storer)
-```
-- Composes processes into a pipeline
-- Verifies channel connections
+## Important v9 detail: channels carry tokens, not tensors
 
-### 5. Event Synchronization
-```python
-event = Event(name="phase_done")
-record(event)           # Mark event occurred
-query(event)            # Check if occurred
-synchronize(event)      # Wait for event
-```
+In v9 codegen-first CSPT artifacts, `send(channel, task(...))`:
 
-## Running the Example
+- **executes** the task for its side effects (writes tensors)
+- sends a **token** equal to the **first axis argument** of the task
+
+`consume(channel, lambda t: ...)` receives that token and binds it as the loop variable `t`.
+
+This matches the v9 design goal: channels are primarily for **synchronization**; large data remains in global tensors.
+
+## Run
 
 ```bash
-# From repository root
-make -C examples/csp_pipeline run
-
-# Or directly
 python examples/csp_pipeline/csp_pipeline_example.py
 ```
 
-## Expected Output
-
-```
-======================================================================
-CSP Pipeline Example - PTO-RT v9
-======================================================================
-
-Configuration:
-  Tile size: 128x128
-  Number of tiles: 8
-
-Kernels (@kernel with tl.* primitives):
-  load_kernel: tl.load, tl.cast, tl.store
-  compute_kernel: tl.load, tl.mul, tl.store
-  store_kernel: tl.load, tl.cast, tl.store
-
-======================================================================
-1. CSP Pipeline Pattern
-======================================================================
-
-Pipeline created:
-  Channels: load_to_compute (depth=2)
-            compute_to_store (depth=2)
-  Processes: loader -> computer -> storer
-Pipeline structure: Pipeline
-
-Kernel IR (traced from tl.* primitives):
-  load_kernel: 3 operations
-    load src
-    cast F16
-    store dst
-
-======================================================================
-2. Simple CSP Workload (with P.pipe())
-======================================================================
-Workload created: Workload
-
-======================================================================
-3. Data-Parallel Equivalent (for comparison)
-======================================================================
-Program compiled: Program
-Tasks enumerated: 24
-Task breakdown:
-  load_kernel: 8 tasks
-  compute_kernel: 8 tasks
-  store_kernel: 8 tasks
-
-======================================================================
-4. Event Synchronization
-======================================================================
-
-Event Synchronization Demo:
-  Created events: load_done, compute_done
-  Recorded: load_done
-  Query load_done: True
-  Synchronized on: load_done
-
-======================================================================
-5. Execution
-======================================================================
-Executing data-parallel workload...
-Execution complete!
-
-======================================================================
-CSP Pipeline Example Summary
-======================================================================
-
-Key v9 CSP patterns demonstrated:
-...
-```
-
-## CSP vs Data-Parallel
-
-| Aspect | CSP Pipeline | Data-Parallel |
-|--------|--------------|---------------|
-| Pattern | Producer-consumer with explicit channels | Independent parallel tasks |
-| Best for | Streaming, pipelined computation | Batch processing |
-| Synchronization | Channel-based (bounded buffers) | Barrier-based or independent |
-| Memory | Can overlap stages (double buffering) | All data resident |
-
 ## Files
 
-- `csp_pipeline_example.py` - Main example code
-- `Makefile` - Build and run targets
-- `README.md` - This file
-
-## Related Examples
-
-- `examples/data_parallel/` - Data-parallel patterns
-- `examples/moe/` - Mixture of Experts with select()
-- `examples/attention/` - Attention workload patterns
+- `examples/csp_pipeline/golden.py`: numpy reference (`square_pipeline_ref`)
+- `examples/csp_pipeline/pto_wsp_impl.py`: PTO-RT implementation (`run_csp_square_pipeline`)
+- `examples/csp_pipeline/csp_pipeline_example.py`: runner + checks

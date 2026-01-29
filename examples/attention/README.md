@@ -1,20 +1,19 @@
-# Multi-Head Attention Example
+# Tiled Attention (Validated)
 
 ## Overview
 
-This example demonstrates multi-head attention computation using PTO-RT v9:
-- Scaled dot-product attention: O = softmax(Q @ K^T / sqrt(d)) @ V
-- Parallel iteration over batch and heads dimensions
-- Tiled computation with online softmax for numerical stability
+This example computes a **per-tile** scaled dot-product attention:
+
+`O = softmax(Q K^T / sqrt(d)) V`
+
+and validates against a NumPy reference for each sequence tile (no cross-tile attention).
 
 ## v9 Features Demonstrated
 
-- `@jit_kernel` decorator with `tl.*` primitives for attention computation
-- `@workload` decorator with `P` namespace for parallel iteration
-- `@kernel` stub for workload task definition
-- Stream-based scheduling with `.streams()` and `.stream_by()`
-- Dispatch policy with `.dispatch(DispatchPolicy.affinity(...))`
-- Type checking with `TypeChecker` and layout join operations
+- `@kernel` + PTO‑ISA primitives (`pto.matmul`, `pto.rowmax`, `pto.exp`, `pto.div`, `pto.store`)
+- `@workload` + `P(batch, heads)` parallel grid + tiled sequence loop
+- Codegen-first CPU simulation (C++ IR → codegen → build `.so` → execute)
+- Numerical validation vs NumPy + non-zero cycle reporting (tolerance-based)
 
 ## Prerequisites
 
@@ -25,7 +24,7 @@ This example demonstrates multi-head attention computation using PTO-RT v9:
 
 ```bash
 # From project root
-python examples/attention/attention_example.py
+PYTHONPATH=python python examples/attention/attention_example.py
 
 # Or using Makefile
 cd examples/attention
@@ -34,54 +33,10 @@ make run
 
 ## Expected Behavior
 
-### Successful Execution
+The example prints:
 
-- Program completes without errors
-- Outputs configuration summary (batch=4, heads=8, seq=512, dim=64)
-- Shows JIT kernel information with tl.* operations
-- Reports 32 total tasks (4 batches × 8 heads)
-- Execution completes with "Example completed successfully!"
-
-### Expected Output Sample
-
-```
-============================================================
-PTO-RT v9 Multi-Head Attention Example
-============================================================
-
-Configuration:
-  Batch size: 4
-  Num heads:  8
-  Seq length: 512
-  Head dim:   64
-  Total tasks: 32
-
-JIT Kernel (@jit_kernel + tl.*):
-  Name: attention_tile_jit
-  Q tile: Tile[32, 64, F16]
-  K tile: Tile[32, 64, F16]
-  V tile: Tile[32, 64, F16]
-  Operations: tl.matmul, tl.rsqrt, tl.rowmax, tl.exp, tl.div
-
-Building workload...
-  Workload type: Workload
-
-Applying schedule...
-  Scheduled type: Workload
-  Streams: 4
-
-Type checking...
-  Layout join R ⊔ S(0): Layout(S(0), R, R, R)
-
-Compiling program...
-  Program type: Program
-
-Executing with CPU simulation...
-Execution complete!
-
-Example completed successfully!
-============================================================
-```
+- `attention: PASS`
+- `attention: total_cycles=<non-zero>`
 
 ## Checking Rules
 
@@ -98,12 +53,7 @@ Example completed successfully!
 
 Use `/codex` to verify example behavior:
 ```bash
-codex exec "Run examples/attention/attention_example.py and verify:
-1. Output matches expected behavior in README
-2. All v9 features work correctly (@jit_kernel, @workload, tl.*)
-3. No deprecated API warnings (npu() should not appear)
-4. Task count shows 32 tasks
-5. CPU simulation executes without errors"
+codex exec "PYTHONPATH=python python examples/attention/attention_example.py"
 ```
 
 ### Fail Indicators
@@ -111,15 +61,13 @@ codex exec "Run examples/attention/attention_example.py and verify:
 - ImportError or ModuleNotFoundError
 - AttributeError (API mismatch)
 - RuntimeError during execution
-- Task count != 32
-- Missing "Execution complete!" message
-- DeprecationWarning for npu() usage
+- Validation mismatch vs NumPy
 
 ## Troubleshooting
 
 **ModuleNotFoundError: No module named 'pto_wsp'**
 - Run from project root directory
-- Or add `sys.path.insert(0, 'python')` at script start
+- Requires pip install -e . from project root
 
 **AttributeError: module has no attribute**
 - Check pto_wsp version matches v9 API

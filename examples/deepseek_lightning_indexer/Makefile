@@ -2,7 +2,7 @@
 # Makefile for running and testing the example
 
 PYTHON ?= python3
-EXAMPLE = deepseek_lightning_indexer.py
+EXAMPLE = deepseek_lightning_indexer_example.py
 PROJECT_ROOT = ../..
 
 .PHONY: run test clean help

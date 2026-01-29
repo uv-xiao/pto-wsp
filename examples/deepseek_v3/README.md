@@ -1,30 +1,20 @@
-# DeepSeek-V3.2 Mixture of Experts (MoE) Example
+# Toy DeepSeek-V3 MoE Block (Validated)
 
 ## Overview
 
-This example demonstrates DeepSeek-V3.2 architecture features using PTO-RT v9:
-- Multi-head Latent Attention (MLA) with KV compression
-- DeepSeekMoE with sparse expert routing
-- Shared experts (always activated)
-- Top-K expert selection
+This is a **small validated** Mixture-of-Experts (MoE) building block suitable for v9 CPU-sim:
 
-Based on DeepSeek-V3 Technical Report (2024).
+- Two expert linears: `e0 = X @ W0`, `e1 = X @ W1`
+- Per-token gate: `Y = g*e0 + (1-g)*e1`
+
+It is **not** a full DeepSeek-V3.2 system (MLA, sparse routing, gather/scatter).
 
 ## v9 Features Demonstrated
 
-- `@jit_kernel` decorator with `tl.*` primitives for multiple kernels:
-  - `expert_ffn_jit`: Expert FFN with SwiGLU (cube operations)
-  - `router_jit`: Router for expert selection
-  - `mla_attention_jit`: Multi-head Latent Attention
-- `@workload` decorator with `P` namespace
-- `P.sel()` for sparse expert iteration
-- Task graph scheduling with tracing (`TracePolicy.cycles()`)
-- Hybrid dependency inference
-- Large task window (16384) for many experts
-- Advanced R5 schedule extensions (deprecated but demonstrated):
-  - `dispatch_threshold()` for adaptive dispatch
-  - `batch_deps()` for batched dependency resolution
-  - `pipeline_depth()` for pipelining
+- `@kernel` + PTO‑ISA primitives (`pto.matmul`, `pto.add`, `pto.mul`, `pto.store`)
+- `@workload` + tiled sequence loop (`P.seq_tiles`)
+- Codegen-first CPU simulation (C++ IR → codegen → build `.so` → execute)
+- Numerical validation vs NumPy + non-zero cycle reporting (tolerance-based)
 
 ## Prerequisites
 
@@ -35,7 +25,7 @@ Based on DeepSeek-V3 Technical Report (2024).
 
 ```bash
 # From project root
-python examples/deepseek_v3/deepseek_v3_example.py
+PYTHONPATH=python python examples/deepseek_v3/deepseek_v3_example.py
 
 # Or using Makefile
 cd examples/deepseek_v3
@@ -44,76 +34,10 @@ make run
 
 ## Expected Behavior
 
-### Successful Execution
+The example prints:
 
-- Program completes without errors
-- Outputs DeepSeek-V3 style configuration (MLA + MoE parameters)
-- Shows 3 JIT kernel definitions
-- Task estimation shows sparse expert computation (2048 tasks)
-- Demonstrates both basic and advanced schedules
-- Execution completes with "Example completed successfully!"
-
-**Note**: This example intentionally uses deprecated R5 extensions (`batch_deps()`, `pipeline_depth()`) to demonstrate advanced scheduling features. These emit deprecation warnings which are expected.
-
-### Expected Output Sample
-
-```
-============================================================
-PTO-RT v9 DeepSeek-V3.2 MoE Example
-============================================================
-
-Configuration (DeepSeek-V3 style):
-  Batch size: 1
-  Sequence length: 256
-  Hidden dimension: 4096
-
-MLA Configuration:
-  Num heads: 32
-  Head dim: 128
-  KV LoRA rank: 512
-
-MoE Configuration:
-  Total experts: 256
-  Active experts (top-K): 8
-  Shared experts: 2
-  Expert FFN dim: 1536
-
-Task estimation:
-  RMSNorm: 16
-  MLA: 40
-  Router: 16
-  Expert FFN (sparse): 2048
-  Shared experts: 16
-  Combine + residual: 32
-
-JIT Kernels (@jit_kernel + tl.*):
-  expert_ffn_jit (cube): tl.matmul, tl.neg, tl.exp, tl.div, tl.mul
-  router_jit: tl.matmul
-  mla_attention_jit: tl.matmul, tl.rsqrt, tl.rowmax, tl.exp, tl.rowsum, tl.div
-
-Building workload...
-  Workload kind: combine
-
-Basic task graph schedule:
-  Deps: hybrid
-  Window: 16384
-  Pools: by_exec_unit
-  Trace: cycles
-
-Advanced schedule (with R5 extensions):
-  Dispatch threshold: [256, 1024, 4096]
-  Batch deps: threshold=128
-  Pipeline depth: 3
-
-Compiling program...
-  Program type: Program
-
-Executing with CPU simulation...
-Execution complete!
-
-Example completed successfully!
-============================================================
-```
+- `deepseek_v3: PASS`
+- `deepseek_v3: total_cycles=<non-zero>`
 
 ## Checking Rules
 
@@ -158,7 +82,7 @@ codex exec "Run examples/deepseek_v3/deepseek_v3_example.py and verify:
 
 **ModuleNotFoundError: No module named 'pto_wsp'**
 - Run from project root directory
-- Or add `sys.path.insert(0, 'python')` at script start
+- Requires pip install -e . from project root
 
 **Deprecation warnings**
 - `batch_deps()` and `pipeline_depth()` warnings are expected

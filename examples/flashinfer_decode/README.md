@@ -1,27 +1,20 @@
-# FlashInfer-Style Decode Attention Example
+# FlashInfer Decode Attention (Validated)
 
 ## Overview
 
-This example demonstrates FlashInfer-style decode attention using PTO-RT v9:
-- Plan-Run execution model (binary search chunk sizing)
-- Work descriptors for O(1) work lookup
-- Tier-based kernel selection (different chunk sizes)
-- Online softmax (FlashAttention style)
+This example is a **small validated** decode-attention workload:
 
-Based on FlashInfer CUDA implementation patterns.
+- `out = softmax(q k^T / sqrt(d)) v`
+- Codegen-first CPU simulation (C++ IR → codegen → build `.so` → execute)
+- Numerical validation vs NumPy + non-zero cycle reporting (tolerance-based)
+
+This example is intentionally self-contained and fully validated via `flashinfer_decode_example.py`.
 
 ## v9 Features Demonstrated
 
-- `@jit_kernel` decorator with `tl.*` primitives:
-  - 4 tier-specific kernels: tier0_attention through tier3_attention
-  - Online softmax: `tl.rowmax`, `tl.exp`, `tl.rowsum`
-  - Typed Value operations (no strings)
-- `AttentionPlanner` class for chunk size optimization
-- `WorkDescriptor` dataclass for work description
-- `@workload` decorator with `P` namespace
-- Work-stealing schedule for dynamic load balancing
-- Multiple streams for parallelism
-- Immediate timing for low latency
+- `@kernel` + PTO‑ISA primitives (`pto.matmul`, `pto.rowmax`, `pto.exp`, `pto.div`, `pto.store`)
+- `@workload` as a single-task program (decode token)
+- Validated output vs NumPy + cycle reporting
 
 ## Prerequisites
 
@@ -32,7 +25,7 @@ Based on FlashInfer CUDA implementation patterns.
 
 ```bash
 # From project root
-python examples/flashinfer_decode/flashinfer_decode_attention.py
+PYTHONPATH=python python examples/flashinfer_decode/flashinfer_decode_example.py
 
 # Or using Makefile
 cd examples/flashinfer_decode
@@ -41,57 +34,10 @@ make run
 
 ## Expected Behavior
 
-### Successful Execution
+The example prints:
 
-- Program shows planning and execution phases
-- Planning phase: optimal chunk size, work descriptors
-- Tier distribution across 4 tiers
-- First 5 work descriptors displayed
-- CPU simulation execution
-- Comparison table with FlashInfer CUDA
-
-### Expected Output Sample
-
-```
-======================================================================
-FlashInfer-Style Decode Attention - PTO-RT v9 Example
-======================================================================
-
-Configuration:
-  Batch size: 16
-  Number of heads: 32
-  Sequence lengths: [512, 1024, 2048, 4096, 512, 512, 1024, 2048]...
-  Total KV tokens: 53248
-
---- Planning Phase ---
-  Optimal chunk size: 4096
-  Generated 672 work descriptors
-
-Plan Statistics:
-  Chunk size: 4096
-  Total work units: 672
-  Tier distribution:
-    Tier 0: 128 (19.0%)
-    Tier 1: 128 (19.0%)
-    Tier 2: 96 (14.3%)
-    Tier 3: 320 (47.6%)
-  Chunks per (request, head):
-    min=1, max=4, avg=1.3
-
-  First 5 descriptors:
-    [0] req=0 head=0 kv=[0,512) tier=0 flags=0x03
-    ...
-
---- Execution Phase ---
-  Program compiled: Program
-  Executing with CPU simulation...
-  Execution complete!
-
-======================================================================
-FlashInfer-Style Decode Attention v9 Summary
-======================================================================
-...
-```
+- `flashinfer_decode: PASS`
+- `flashinfer_decode: total_cycles=<non-zero>`
 
 ## Checking Rules
 
@@ -109,12 +55,7 @@ FlashInfer-Style Decode Attention v9 Summary
 
 Use `/codex` to verify example behavior:
 ```bash
-codex exec "Run examples/flashinfer_decode/flashinfer_decode_attention.py and verify:
-1. Planning phase generates work descriptors
-2. 4 tier-specific JIT kernels defined
-3. Online softmax pattern (tl.rowmax, tl.exp, tl.rowsum)
-4. Tier distribution percentages sum to 100%
-5. No deprecated API warnings (npu() should not appear)"
+codex exec "PYTHONPATH=python python examples/flashinfer_decode/flashinfer_decode_example.py"
 ```
 
 ### Fail Indicators
@@ -122,15 +63,13 @@ codex exec "Run examples/flashinfer_decode/flashinfer_decode_attention.py and ve
 - ImportError or ModuleNotFoundError
 - AttributeError (API mismatch)
 - RuntimeError during execution
-- Missing planning statistics
-- Work descriptors not generated
-- DeprecationWarning for npu() usage
+- Validation mismatch vs NumPy
 
 ## Troubleshooting
 
 **ModuleNotFoundError: No module named 'pto_wsp'**
 - Run from project root directory
-- Or add `sys.path.insert(0, 'python')` at script start
+- Requires pip install -e . from project root
 
 **Chunk size calculation issues**
 - Binary search finds optimal chunk size

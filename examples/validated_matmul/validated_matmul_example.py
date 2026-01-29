@@ -11,29 +11,30 @@ sys.path.insert(0, str(_HERE.parent / "_harness"))
 sys.path.insert(0, str(_HERE))
 
 from harness import CycleCheck, run_example  # noqa: E402
-from golden import rmsnorm_ref  # noqa: E402
-from pto_wsp_impl import run_rmsnorm  # noqa: E402
+from golden import matmul_ref  # noqa: E402
+from pto_wsp_impl import run_matmul  # noqa: E402
 
 
 def main() -> bool:
-    batch, seq, hidden = 1, 32, 16
-    seed = 0
+    batch_size, m, n, k = 1, 16, 16, 16
+    seed = 42
 
-    rng = np.random.default_rng(seed)
-    x = rng.standard_normal((batch, seq, hidden), dtype=np.float32).astype(np.float32)
+    np.random.seed(seed)
+    a = np.random.randn(batch_size, m, k).astype(np.float32)
+    b = np.random.randn(batch_size, k, n).astype(np.float32)
 
     try:
         run_example(
-            "e2e_rmsnorm",
-            run_pto=lambda: run_rmsnorm(x),
-            run_golden=lambda: rmsnorm_ref(x),
+            "validated_matmul",
+            run_pto=lambda: run_matmul(a, b),
+            run_golden=lambda: matmul_ref(a, b),
             rtol=1e-5,
             atol=1e-6,
-            cycles=CycleCheck(expected=1072, rel_tol=0.20, min_cycles=1),
+            cycles=CycleCheck(expected=4864, rel_tol=0.20, min_cycles=1),
         )
         return True
     except Exception as e:  # noqa: BLE001
-        print(f"e2e_rmsnorm: FAIL ({e})")
+        print(f"validated_matmul: FAIL ({e})")
         return False
 
 

@@ -1,252 +1,44 @@
 #!/usr/bin/env python3
-"""
-PTO-RT v9 End-to-End Example: CSP Pipeline
-
-This example demonstrates CSP (Communicating Sequential Processes) primitives
-for pipeline-parallel execution:
-- Channel: Typed, bounded communication channel
-- process: Named process with input/output channels
-- send/consume: Channel operations
-- connect: Pipeline composition
-
-Architecture:
-- Producer-consumer pattern with explicit channels
-- Three-stage pipeline: Load -> Compute -> Store
-- Demonstrates data flow between processes
-
-Usage:
-    python examples/csp_pipeline/csp_pipeline_example.py
-"""
+from __future__ import annotations
 
 import sys
-sys.path.insert(0, 'python')
+from pathlib import Path
 
-from pto_wsp import (
-    kernel, tl,
-    In, Out, Tile,
-    workload, P,
-    Dense, DenseDyn, Tensor, DType,
-    DispatchPolicy, TimingPolicy,
-    task, combine, for_each, parallel_for,
-)
+import numpy as np
 
-from pto_wsp.csp import (
-    Channel,
-    process,
-    send,
-    consume,
-    connect,
-    Event,
-    record,
-    synchronize,
-    query,
-)
+_HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(_HERE.parent / "_harness"))
+sys.path.insert(0, str(_HERE))
 
-# ============================================================================
-# CONSTANTS
-# ============================================================================
-
-TILE_SIZE = 128
-NUM_TILES = 8
-F32 = DType.F32
-F16 = DType.F16
-
-print("=" * 70)
-print("CSP Pipeline Example - PTO-RT v9")
-print("=" * 70)
-
-# ============================================================================
-# KERNELS (with tl.* primitives)
-# ============================================================================
-
-@kernel
-def load_kernel(
-    src: In[Tile[TILE_SIZE, TILE_SIZE, F16]],
-    dst: Out[Tile[TILE_SIZE, TILE_SIZE, F16]],
-):
-    """Load data from source to destination."""
-    # Load source tile
-    data = tl.load(src)
-    # Store to destination
-    tl.store(dst, data)
+from harness import CycleCheck, run_example  # noqa: E402
+from golden import square_pipeline_ref  # noqa: E402
+from pto_wsp_impl import run_csp_square_pipeline  # noqa: E402
 
 
-@kernel
-def compute_kernel(
-    input_tile: In[Tile[TILE_SIZE, TILE_SIZE, F16]],
-    output_tile: Out[Tile[TILE_SIZE, TILE_SIZE, F16]],
-):
-    """Compute on tile (example: element-wise square)."""
-    data = tl.load(input_tile)
-    squared = tl.mul(data, data)
-    tl.store(output_tile, squared)
+def main() -> bool:
+    tiles, h, w = 8, 64, 64
+    seed = 0
+
+    rng = np.random.default_rng(seed)
+    x = rng.standard_normal((tiles, h, w), dtype=np.float32)
+
+    try:
+        run_example(
+            "csp_pipeline",
+            run_pto=lambda: run_csp_square_pipeline(x),
+            run_golden=lambda: square_pipeline_ref(x),
+            rtol=1e-6,
+            atol=1e-6,
+            cycles=CycleCheck(expected=114688, rel_tol=0.20, min_cycles=1),
+        )
+        return True
+    except Exception as e:  # noqa: BLE001
+        print(f"csp_pipeline: FAIL ({e})")
+        return False
 
 
-@kernel
-def store_kernel(
-    src: In[Tile[TILE_SIZE, TILE_SIZE, F16]],
-    dst: Out[Tile[TILE_SIZE, TILE_SIZE, F16]],
-):
-    """Store data from source to destination."""
-    data = tl.load(src)
-    tl.store(dst, data)
-
-
-# ============================================================================
-# CSP PIPELINE DEFINITION
-# ============================================================================
-
-def create_csp_pipeline(num_tiles: int):
-    """Create a three-stage CSP pipeline.
-
-    Pipeline stages:
-    1. Loader: Reads data and sends to compute channel
-    2. Computer: Receives data, processes, sends to store channel
-    3. Storer: Receives processed data and writes output
-
-    Args:
-        num_tiles: Number of tiles to process
-
-    Returns:
-        Pipeline workload ready for execution
-    """
-    # Channels for inter-process communication
-    load_to_compute = Channel[Tensor](name="load_to_compute", depth=2)
-    compute_to_store = Channel[Tensor](name="compute_to_store", depth=2)
-
-    # Axis for tile iteration
-    tiles = Dense[num_tiles]()
-
-    # Define processes using process() builder
-    # Process bodies use declarative workload primitives
-
-    # Process 1: Loader - produces tiles to load_to_compute channel
-    loader = (process("loader")
-        .produces(load_to_compute)
-        .body(for_each(tiles, lambda t:
-            send(load_to_compute, task("load_kernel", [t], ["input_data", "temp_f16"])))))
-
-    # Process 2: Computer - consumes from load channel, produces to store channel
-    computer = (process("computer")
-        .consumes(load_to_compute)
-        .produces(compute_to_store)
-        .body(consume(load_to_compute, lambda tile_data:
-            send(compute_to_store, task("compute_kernel", [tile_data], ["temp_f16"])))))
-
-    # Process 3: Storer - consumes from store channel, writes output
-    storer = (process("storer")
-        .consumes(compute_to_store)
-        .body(consume(compute_to_store, lambda tile_data:
-            task("store_kernel", [tile_data], ["temp_f16", "output_data"]))))
-
-    # Connect processes into pipeline
-    pipeline = connect(
-        [loader, computer, storer],
-        [load_to_compute, compute_to_store]
-    )
-
-    print(f"\nPipeline created:")
-    print(f"  Channels: {load_to_compute.name} (depth={load_to_compute.depth})")
-    print(f"            {compute_to_store.name} (depth={compute_to_store.depth})")
-    print(f"  Processes: {loader.name} -> {computer.name} -> {storer.name}")
-
-    return pipeline
-
-
-def create_simple_csp_workload(num_tiles: int):
-    """Create a simpler CSP example using @workload with P.pipe().
-
-    This demonstrates CSP primitives integrated with the @workload decorator.
-    """
-    # Tensors
-    input_data = Tensor(data=None, shape=(num_tiles, TILE_SIZE, TILE_SIZE), dtype=F16)
-    output_data = Tensor(data=None, shape=(num_tiles, TILE_SIZE, TILE_SIZE), dtype=F16)
-    temp = Tensor(data=None, shape=(num_tiles, TILE_SIZE, TILE_SIZE), dtype=F16)
-
-    tiles = Dense[num_tiles]()
-
-    @workload
-    def csp_workload():
-        """CSP workload with pipeline context."""
-        # Pipeline context allows channel operations
-        with P.pipe():
-            # Create channel for producer-consumer
-            ch = Channel[Tensor](name="data_channel", depth=2)
-
-            # Producer: Load tiles - using task() within P() loop
-            for t in P(tiles):
-                send(ch, task("load_kernel", [t], [input_data[t], temp[t]]))
-
-            # Consumer: Process tiles (would receive from channel)
-            # Note: In actual execution, consume() blocks until data available
-            consume(ch, lambda data:
-                task("compute_kernel", [data], [temp]))
-
-    return csp_workload()
-
-
-# ============================================================================
-# ALTERNATIVE: Data-Parallel Approach (for comparison)
-# ============================================================================
-
-def create_data_parallel_workload(num_tiles: int):
-    """Create equivalent workload using data-parallel pattern.
-
-    This shows the same computation without CSP, for comparison.
-    """
-    input_data = Tensor(data=None, shape=(num_tiles, TILE_SIZE, TILE_SIZE), dtype=F16)
-    output_data = Tensor(data=None, shape=(num_tiles, TILE_SIZE, TILE_SIZE), dtype=F16)
-    temp = Tensor(data=None, shape=(num_tiles, TILE_SIZE, TILE_SIZE), dtype=F16)
-
-    tiles = Dense[num_tiles]()
-
-    @workload
-    def parallel_workload():
-        """Data-parallel version - all tiles processed independently."""
-        for t in P(tiles):
-            # Load
-            load_kernel[t](src=input_data[t], dst=temp[t])
-            # Compute
-            compute_kernel[t](input_tile=temp[t], output_tile=temp[t])
-            # Store
-            store_kernel[t](src=temp[t], dst=output_data[t])
-
-    return parallel_workload()
-
-
-# ============================================================================
-# EVENT-BASED SYNCHRONIZATION DEMO
-# ============================================================================
-
-def demo_event_synchronization():
-    """Demonstrate event-based synchronization."""
-    print("\nEvent Synchronization Demo:")
-
-    # Create events for coordination
-    load_done = Event(name="load_done")
-    compute_done = Event(name="compute_done")
-
-    print(f"  Created events: {load_done.name}, {compute_done.name}")
-
-    # Simulate recording events
-    record(load_done)
-    print(f"  Recorded: {load_done.name}")
-
-    # Query event status (would return True if event occurred)
-    status = query(load_done)
-    print(f"  Query {load_done.name}: {status}")
-
-    # Synchronize (would block until event)
-    synchronize(load_done)
-    print(f"  Synchronized on: {load_done.name}")
-
-
-# ============================================================================
-# CSP PRIMITIVES DEMONSTRATION
-# ============================================================================
-
-def demo_csp_primitives():
-    """Demonstrate CSP primitives without full pipeline."""
+if __name__ == "__main__":
+    sys.exit(0 if main() else 1)
     print("\nCSP Primitives Demo:")
 
     # 1. Channel creation
@@ -287,11 +79,11 @@ def main():
     print(f"  Number of tiles: {NUM_TILES}")
 
     # Kernel info
-    print(f"\nKernels (@kernel with tl.* primitives):")
+    print(f"\nKernels (@kernel with pto.* primitives):")
     kernels = [
-        ("load_kernel", load_kernel, "tl.load, tl.store"),
-        ("compute_kernel", compute_kernel, "tl.load, tl.mul, tl.store"),
-        ("store_kernel", store_kernel, "tl.load, tl.store"),
+        ("load_kernel", load_kernel, "pto.load, pto.store"),
+        ("compute_kernel", compute_kernel, "pto.load, pto.mul, pto.store"),
+        ("store_kernel", store_kernel, "pto.load, pto.store"),
     ]
     for name, k, ops in kernels:
         print(f"  {name}: {ops}")
@@ -310,7 +102,7 @@ def main():
     print(f"Pipeline structure: {type(pipeline).__name__}")
 
     # Trace kernels to show IR
-    print(f"\nKernel IR (traced from tl.* primitives):")
+    print(f"\nKernel IR (traced from pto.* primitives):")
     ir = load_kernel.trace()
     print(f"  load_kernel: {len(ir.ops)} operations")
     for op in ir.ops[:3]:
@@ -330,7 +122,17 @@ def main():
     print("\n" + "=" * 70)
     print("4. Data-Parallel Equivalent (for comparison)")
     print("=" * 70)
-    dp_workload = create_data_parallel_workload(NUM_TILES)
+    np.random.seed(0)
+    input_np = np.random.randn(NUM_TILES, TILE_SIZE, TILE_SIZE).astype(np.float16)
+    output_np = np.zeros_like(input_np)
+    temp_np = np.zeros_like(input_np)
+    ref_np = (input_np.astype(np.float32) * input_np.astype(np.float32)).astype(np.float16)
+
+    input_data = Tensor(data=input_np, shape=input_np.shape, dtype=F16)
+    output_data = Tensor(data=output_np, shape=output_np.shape, dtype=F16)
+    temp = Tensor(data=temp_np, shape=temp_np.shape, dtype=F16)
+
+    dp_workload = create_data_parallel_workload(input_data, output_data, temp, NUM_TILES)
 
     # Apply schedule
     scheduled = (dp_workload
@@ -366,7 +168,18 @@ def main():
     print("=" * 70)
     print("Executing data-parallel workload...")
     scheduled.execute()
+    scheduled.synchronize()
     print("Execution complete!")
+
+    stats = scheduled.stats() if callable(scheduled.stats) else scheduled.stats
+    print(f"Total cycles: {getattr(stats, 'total_cycles', 'N/A')}")
+
+    max_err = float(np.max(np.abs(output_np.astype(np.float32) - ref_np.astype(np.float32))))
+    print(f"Max error:  {max_err:.3e}")
+    if max_err < 1e-2:
+        print("Status: PASS")
+    else:
+        print("Status: FAIL")
 
     # Summary
     print(f"\n" + "=" * 70)

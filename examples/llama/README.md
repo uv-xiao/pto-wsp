@@ -1,27 +1,21 @@
-# LLaMA Transformer Layer Example
+# Toy LLaMA-Style Block (Validated)
 
 ## Overview
 
-This example demonstrates a complete LLaMA transformer layer using PTO-RT v9:
-- RMSNorm (pre-attention and pre-MLP)
-- Multi-head attention with RoPE (Rotary Position Embedding)
-- SwiGLU MLP (gate projection, up projection, SiLU, down projection)
-- Residual connections
+This is a small validated “transformer block”-style example suitable for v9 CPU-sim:
 
-Based on LLaMA-7B architecture parameters.
+- Per-tile attention: `Attn = softmax(X X^T / sqrt(d)) X`
+- Residual + RMSNorm
+- 2-layer MLP with ReLU
+
+It is intentionally **not** a full LLaMA-7B (no RoPE, no multi-head, no SwiGLU).
 
 ## v9 Features Demonstrated
 
-- `@jit_kernel` decorator with `tl.*` primitives for multiple kernels:
-  - `rmsnorm_tile_jit`: RMSNorm computation
-  - `linear_tile_jit`: Linear projection (cube operations)
-  - `silu_tile_jit`: SiLU activation
-  - `attention_tile_jit`: Scaled dot-product attention
-- `@workload` decorator with `P` namespace
-- Hybrid dependency inference (`Deps.hybrid()`)
-- Pool separation by execution unit (`Pools.by_exec_unit()`)
-- Work-stealing ready policy
-- Start threshold configuration
+- `@kernel` + PTO‑ISA primitives (matmul/reductions/exp/etc.)
+- `@workload` + tiled sequence loop
+- Codegen-first CPU simulation (C++ IR → codegen → build `.so` → execute)
+- Numerical validation vs NumPy + non-zero cycle reporting (tolerance-based)
 
 ## Prerequisites
 
@@ -32,7 +26,7 @@ Based on LLaMA-7B architecture parameters.
 
 ```bash
 # From project root
-python examples/llama/llama_example.py
+PYTHONPATH=python python examples/llama/llama_example.py
 
 # Or using Makefile
 cd examples/llama
@@ -41,65 +35,10 @@ make run
 
 ## Expected Behavior
 
-### Successful Execution
+The example prints:
 
-- Program completes without errors
-- Outputs LLaMA-7B style configuration
-- Shows 4 JIT kernel definitions with appropriate tl.* operations
-- Estimates 928 total tasks across all operations
-- Task graph schedule uses hybrid dependencies and work-stealing
-- Execution completes with "Example completed successfully!"
-
-### Expected Output Sample
-
-```
-============================================================
-PTO-RT v9 LLaMA Transformer Layer Example
-============================================================
-
-Configuration (LLaMA-7B style):
-  Batch size: 1
-  Sequence length: 512
-  Hidden dimension: 4096
-  Number of heads: 32
-  Head dimension: 128
-  MLP dimension: 11008
-  Tile size: 32
-
-Estimated tasks:
-  RMSNorm: 32
-  Linear: 112
-  RoPE: 32
-  Attention: 32
-  SiLU: 344
-  Mul: 344
-  Add: 32
-  Total: 928
-
-JIT Kernels (@jit_kernel + tl.*):
-  rmsnorm_tile_jit: tl.mul, tl.rowmean, tl.add, tl.rsqrt
-  linear_tile_jit (cube): tl.matmul
-  silu_tile_jit: tl.neg, tl.exp, tl.add, tl.div
-  attention_tile_jit: tl.matmul, tl.rsqrt, tl.rowmax, tl.exp, tl.rowsum, tl.div
-
-Building workload...
-  Workload kind: combine
-
-Applying task graph schedule...
-  Deps: hybrid
-  Pools: by_exec_unit (vector/cube separation)
-  Ready: work_steal
-  Start threshold: 50
-
-Compiling program...
-  Program type: Program
-
-Executing with CPU simulation...
-Execution complete!
-
-Example completed successfully!
-============================================================
-```
+- `llama: PASS`
+- `llama: total_cycles=<non-zero>`
 
 ## Checking Rules
 
@@ -140,7 +79,7 @@ codex exec "Run examples/llama/llama_example.py and verify:
 
 **ModuleNotFoundError: No module named 'pto_wsp'**
 - Run from project root directory
-- Or add `sys.path.insert(0, 'python')` at script start
+- Requires pip install -e . from project root
 
 **Task count mismatch**
 - Verify tile size divides evenly into dimensions

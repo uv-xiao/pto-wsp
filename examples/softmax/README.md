@@ -1,21 +1,22 @@
-# Online Softmax Example
+# Tiled Softmax (Validated)
 
 ## Overview
 
-This example demonstrates online softmax computation using PTO-RT v9:
-- y = softmax(x) = exp(x - max(x)) / sum(exp(x - max(x)))
-- Uses online algorithm to avoid materializing full intermediate
-- Two-phase computation: online max/sum accumulation + final rescaling
+This example computes:
+
+`y = softmax(x) = exp(x - max(x)) / sum(exp(x - max(x)))`
+
+and validates the result against a NumPy reference.
 
 ## v9 Features Demonstrated
 
-- `@jit_kernel` decorator with `tl.*` primitives for online softmax
-- Two JIT kernels: `online_softmax_tile_jit` and `softmax_rescale_jit`
-- `@workload` decorator with `P` namespace
-- `P.seq()` for sequential vocabulary tile iteration (phase 1)
-- `P()` for parallel rescaling (phase 2)
-- Task graph scheduling with FIFO ready policy
-- Tensor map exact dependency inference
+- `@kernel` + PTO‑ISA primitives:
+  - `update_rowmax`: running row max over vocab tiles
+  - `exp_and_accumulate`: `exp(x-max)` and running row sum
+  - `rescale`: final normalization
+- `@workload` + `P.seq()` to express sequential passes over vocab tiles
+- Codegen-first CPU simulation (C++ IR → codegen → build `.so` → execute)
+- Numerical validation vs NumPy + non-zero cycle reporting (tolerance-based)
 
 ## Prerequisites
 
@@ -26,7 +27,7 @@ This example demonstrates online softmax computation using PTO-RT v9:
 
 ```bash
 # From project root
-python examples/softmax/softmax_example.py
+PYTHONPATH=python python examples/softmax/softmax_example.py
 
 # Or using Makefile
 cd examples/softmax
@@ -35,57 +36,10 @@ make run
 
 ## Expected Behavior
 
-### Successful Execution
+The example prints:
 
-- Program completes without errors
-- Outputs configuration (batch=4, seq=2048, vocab=32000)
-- Shows two JIT kernel definitions with tl.* operations
-- Reports 7936 online tiles and 7936 rescale tiles
-- Task graph schedule uses FIFO ready policy
-- Execution completes with "Example completed successfully!"
-
-### Expected Output Sample
-
-```
-============================================================
-PTO-RT v9 Online Softmax Example
-============================================================
-
-Configuration:
-  Batch size: 4
-  Sequence length: 2048
-  Vocabulary size: 32000
-  Tile size: 32 x 1024
-  Online tiles: 7936
-  Rescale tiles: 7936
-
-JIT Kernels (@jit_kernel + tl.*):
-  online_softmax_tile_jit:
-    Input x: Tile[32, 1024, F16]
-    Output y: Tile[32, 1024, F16]
-    Running max: Tile[32, 1, F32]
-    Running sum: Tile[32, 1, F32]
-    Operations: tl.rowmax, tl.max, tl.sub, tl.exp, tl.rowsum, tl.add
-  softmax_rescale_jit:
-    Operations: tl.rsqrt, tl.mul, tl.store
-
-Building workload...
-  Workload kind: combine
-
-Applying task graph schedule...
-  Deps: infer_tensor_map_exact
-  Window: 4096 tasks
-  Ready: fifo
-
-Compiling program...
-  Program type: Program
-
-Executing with CPU simulation...
-Execution complete!
-
-Example completed successfully!
-============================================================
-```
+- `softmax: PASS`
+- `softmax: total_cycles=<non-zero>`
 
 ## Checking Rules
 
@@ -104,12 +58,7 @@ Example completed successfully!
 
 Use `/codex` to verify example behavior:
 ```bash
-codex exec "Run examples/softmax/softmax_example.py and verify:
-1. Output matches expected behavior in README
-2. Two JIT kernels defined (online_softmax_tile_jit, softmax_rescale_jit)
-3. Task graph schedule uses FIFO ready policy
-4. No deprecated API warnings (npu() should not appear)
-5. CPU simulation executes without errors"
+codex exec "PYTHONPATH=python python examples/softmax/softmax_example.py"
 ```
 
 ### Fail Indicators
@@ -117,7 +66,7 @@ codex exec "Run examples/softmax/softmax_example.py and verify:
 - ImportError or ModuleNotFoundError
 - AttributeError (API mismatch)
 - RuntimeError during execution
-- Tile counts don't match expected values
+- Validation mismatch vs NumPy
 - Missing JIT kernel definitions
 - DeprecationWarning for npu() usage
 
@@ -125,7 +74,7 @@ codex exec "Run examples/softmax/softmax_example.py and verify:
 
 **ModuleNotFoundError: No module named 'pto_wsp'**
 - Run from project root directory
-- Or add `sys.path.insert(0, 'python')` at script start
+- Requires pip install -e . from project root
 
 **Numerical issues in online softmax**
 - The online algorithm requires careful ordering of operations

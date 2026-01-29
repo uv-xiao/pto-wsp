@@ -2,7 +2,7 @@
 # Makefile for running and testing the example
 
 PYTHON ?= python3
-EXAMPLE = flashinfer_decode_attention.py
+EXAMPLE = flashinfer_decode_example.py
 PROJECT_ROOT = ../..
 
 .PHONY: run test clean help
