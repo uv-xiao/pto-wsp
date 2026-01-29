@@ -196,23 +196,3 @@ Manus operates in a continuous 7-step loop:
 | Time to $100M revenue | 8 months |
 | Framework refactors since launch | 5 times |
 
----
-
-## Key Quotes
-
-> "Context window = RAM (volatile, limited). Filesystem = Disk (persistent, unlimited). Anything important gets written to disk."
-
-> "if action_failed: next_action != same_action. Track what you tried. Mutate the approach."
-
-> "Error recovery is one of the clearest signals of TRUE agentic behavior."
-
-> "KV-cache hit rate is the single most important metric for a production-stage AI agent."
-
-> "Leave the wrong turns in the context."
-
----
-
-## Source
-
-Based on Manus's official context engineering documentation:
-https://manus.im/blog/Context-Engineering-for-AI-Agents-Lessons-from-Building-Manus

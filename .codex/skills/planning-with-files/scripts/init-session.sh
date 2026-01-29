@@ -118,3 +118,4 @@ fi
 echo ""
 echo "Planning files initialized!"
 echo "Files: task_plan.md, findings.md, progress.md"
+

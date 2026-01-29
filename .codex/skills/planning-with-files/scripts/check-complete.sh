@@ -1,7 +1,6 @@
 #!/bin/bash
 # Check if all phases in task_plan.md are complete
 # Exit 0 if complete, exit 1 if incomplete
-# Used by Stop hook to verify task completion
 
 PLAN_FILE="${1:-task_plan.md}"
 
@@ -32,13 +31,13 @@ echo "In progress:    $IN_PROGRESS"
 echo "Pending:        $PENDING"
 echo ""
 
-# Check completion
 if [ "$COMPLETE" -eq "$TOTAL" ] && [ "$TOTAL" -gt 0 ]; then
     echo "ALL PHASES COMPLETE"
     exit 0
-else
-    echo "TASK NOT COMPLETE"
-    echo ""
-    echo "Do not stop until all phases are complete."
-    exit 1
 fi
+
+echo "TASK NOT COMPLETE"
+echo ""
+echo "Do not stop until all phases are complete."
+exit 1
+

@@ -87,9 +87,6 @@ Phase 1
 <!-- 
   WHAT: Important questions you need to answer during the task.
   WHY: These guide your research and decision-making. Answer them as you go.
-  EXAMPLE: 
-    1. Should tasks persist between sessions? (Yes - need file storage)
-    2. What format for storing tasks? (JSON file)
 -->
 1. [Question to answer]
 2. [Question to answer]
@@ -99,8 +96,6 @@ Phase 1
   WHAT: Technical and design decisions you've made, with the reasoning behind them.
   WHY: You'll forget why you made choices. This table helps you remember and justify decisions.
   WHEN: Update whenever you make a significant choice (technology, approach, structure).
-  EXAMPLE:
-    | Use JSON for storage | Simple, human-readable, built-in Python support |
 -->
 | Decision | Rationale |
 |----------|-----------|
@@ -111,9 +106,6 @@ Phase 1
   WHAT: Every error you encounter, what attempt number it was, and how you resolved it.
   WHY: Logging errors prevents repeating the same mistakes. This is critical for learning.
   WHEN: Add immediately when an error occurs, even if you fix it quickly.
-  EXAMPLE:
-    | FileNotFoundError | 1 | Check if file exists, create empty list if not |
-    | JSONDecodeError | 2 | Handle empty file case explicitly |
 -->
 | Error | Attempt | Resolution |
 |-------|---------|------------|
@@ -130,3 +122,4 @@ Phase 1
 - Update phase status as you progress: pending → in_progress → complete
 - Re-read this plan before major decisions (attention manipulation)
 - Log ALL errors - they help avoid repetition
+

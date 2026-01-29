@@ -23,6 +23,10 @@ venv/
 .coverage
 htmlcov/
 
+# Codex/Codex-skill loop state
+.ralph-loop/
+.claude/
+
 # OS
 .DS_Store
 Thumbs.db
