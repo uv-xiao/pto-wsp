@@ -24,7 +24,7 @@ clean:
 
 # Help
 help:
-	@echo "CSP Pipeline Example - PTO-RT v9"
+	@echo "CSP Pipeline Example - PTO-WSP v9"
 	@echo ""
 	@echo "Targets:"
 	@echo "  make run   - Execute the example"

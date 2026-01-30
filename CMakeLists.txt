@@ -31,20 +31,20 @@ include_directories(
 
 # Collect source files
 file(GLOB_RECURSE PTO_WSP_IR_SOURCES
-    "src/pto/rt/ir/*.cpp"
+    "src/pto/wsp/ir/*.cpp"
 )
 
 file(GLOB_RECURSE PTO_WSP_GRAPH_SOURCES
-    "src/pto/rt/graph/*.cpp"
+    "src/pto/wsp/graph/*.cpp"
 )
 
 file(GLOB_RECURSE PTO_WSP_BACKEND_SOURCES
-    "src/pto/rt/backend/*.cpp"
+    "src/pto/wsp/backend/*.cpp"
 )
 
 # Codegen / artifact building utilities (v9 formal pipeline)
 file(GLOB_RECURSE PTO_WSP_CODEGEN_SOURCES
-    "src/pto/rt/codegen/*.cpp"
+    "src/pto/wsp/codegen/*.cpp"
 )
 
 # Combine all sources

@@ -4,8 +4,8 @@
 
 #pragma once
 
-#include "pto/rt/ir/core.hpp"
-#include "pto/rt/ir/ext.hpp"  // AttrMap/AttrValue for op attrs
+#include "pto/wsp/ir/core.hpp"
+#include "pto/wsp/ir/ext.hpp"  // AttrMap/AttrValue for op attrs
 
 #include <cstdint>
 #include <map>

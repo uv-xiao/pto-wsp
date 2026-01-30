@@ -13,7 +13,7 @@ from pto_wsp.types import DType
 # PTO-ISA kernel JIT (Python authoring -> C++ source emission)
 #
 # Goal: let users author kernels in Python using PTO-ISA instruction names,
-# without adding new "primitive ops" to the PTO-RT kernel IR. The output is
+# without adding new "primitive ops" to the PTO-WSP kernel IR. The output is
 # emitted as a custom C++ kernel body (`cpp_src`) compiled into codegen-first
 # artifacts via the existing custom-kernel facility.
 # -----------------------------------------------------------------------------
@@ -513,7 +513,7 @@ def ptoisa_kernel(func: Callable | None = None, *, cpp_includes: Optional[list[s
     The decorated function is executed at decoration time in tracing mode to
     produce a custom C++ kernel body (`cpp_src`) that calls PTO-ISA wrappers.
 
-    This stays within v9 Path A: it does not extend PTO-RT primitive ops; it
+    This stays within v9 Path A: it does not extend PTO-WSP primitive ops; it
     emits user kernel code compiled into the artifact.
     """
 

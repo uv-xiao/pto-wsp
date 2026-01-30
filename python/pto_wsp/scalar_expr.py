@@ -1,5 +1,5 @@
 """
-Scalar expression (ScalarExpr) DSL for PTO-RT v9.
+Scalar expression (ScalarExpr) DSL for PTO-WSP v9.
 
 This is a **symbolic** expression system used for:
 - runtime predicates (cond)

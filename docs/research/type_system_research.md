@@ -1,8 +1,8 @@
-# Unified Type System Research for PTO-RT v9
+# Unified Type System Research for PTO-WSP v9
 
 ## Overview
 
-This document analyzes type system design patterns from Triton, Dato, and existing v8 architecture to design a unified type system for PTO-RT v9 that addresses requirements R8 (Unified Type System) and R10 (Layout as Refinement Types).
+This document analyzes type system design patterns from Triton, Dato, and existing v8 architecture to design a unified type system for PTO-WSP v9 that addresses requirements R8 (Unified Type System) and R10 (Layout as Refinement Types).
 
 ---
 

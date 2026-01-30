@@ -1,5 +1,5 @@
 #!/bin/bash
-# PTO-RT Unified Test Runner (L5)
+# PTO-WSP Unified Test Runner (L5)
 # Runs all C++ and Python tests with summary reporting
 
 set -e
@@ -23,7 +23,7 @@ PYTHON_FAILED=0
 PYTHON_SKIPPED=0
 
 echo -e "${BLUE}========================================${NC}"
-echo -e "${BLUE}    PTO-RT Unified Test Runner${NC}"
+echo -e "${BLUE}    PTO-WSP Unified Test Runner${NC}"
 echo -e "${BLUE}========================================${NC}"
 echo ""
 

@@ -1,4 +1,4 @@
-# PTO-RT v9: Implementation Guide (As-Built)
+# PTO-WSP v9: Implementation Guide (As-Built)
 
 > **Date:** 2026-01-28  
 > **Purpose:** Explain how the current codebase implements the feature catalog in `docs/features.md`, with concrete code entrypoints and an end-to-end view of the **codegen-first** execution model.
@@ -9,7 +9,7 @@ This document is “as-built” documentation. If `docs/features.md` or `docs/sp
 
 ## 0) Big Picture (What runs where)
 
-PTO-RT is split into:
+PTO-WSP is split into:
 
 - **Python frontend** (author workloads/kernels, build IR, provide runtime data)
 - **C++ compilation + codegen** (typecheck/lower, emit C++ sources, build artifacts)
@@ -37,7 +37,7 @@ Python authoring
          |                                |
          v                                v
  emit workload_main.cpp + kernel_*.cpp   compile_sources_via_cmake()
-   (C++ codegen)          (src/pto/rt/codegen/cmake_compiler.cpp)
+   (C++ codegen)          (src/pto/wsp/codegen/cmake_compiler.cpp)
          |                                |
          +----------------+---------------+
                           |
@@ -84,7 +84,7 @@ This section follows the numbering in `docs/features.md` and points to the imple
   - Workload params: `_convert_workload_def_codegen()` in `python/pto_wsp/ir_bridge.py`
   - Loop axes: `_convert_axis()` and `factory.create_*_axis(...)`
 - **Runtime behavior (codegen-first):**
-  - `DenseDyn` loop bounds come from `RuntimeContext.get_axis_size()` (ABI: `include/pto/rt/codegen/abi/workload_abi.hpp`)
+  - `DenseDyn` loop bounds come from `RuntimeContext.get_axis_size()` (ABI: `include/pto/wsp/codegen/abi/workload_abi.hpp`)
   - `Ragged`/`Sparse` use runtime **symbols** (see Section 4)
 - **Validation:** `tests/test_codegen_dynamic_axes.py`, `tests/test_codegen_ragged_axis.py`, `tests/test_codegen_select_sparse.py`
 
@@ -94,7 +94,7 @@ This section follows the numbering in `docs/features.md` and points to the imple
 - **Codegen tensor binding model:**
   - Python `Tensor` views retain `base` + `index_exprs` for codegen (`python/pto_wsp/types.py`)
   - IR bridge emits `CodegenTensorArg` per kernel tensor param (base tensor id, view rank, index exprs) (`python/pto_wsp/ir_bridge.py`)
-  - Generated code uses runtime **strides** to support non-contiguous views (kernel ABI: `include/pto/rt/codegen/abi/kernel_abi.hpp`)
+  - Generated code uses runtime **strides** to support non-contiguous views (kernel ABI: `include/pto/wsp/codegen/abi/kernel_abi.hpp`)
 
 ### 3–5. `@workload`, `@kernel`, `P` namespace
 
@@ -112,7 +112,7 @@ This section follows the numbering in `docs/features.md` and points to the imple
   - `kernel.trace()` returns a `KernelIR` containing ops such as `Matmul`, `Store`, `RowSum`, `Exp`, etc.
 - **Consumed by codegen-first path:** `python/pto_wsp/ir_bridge.py` extracts `KernelIR` and encodes it into C++ `CodegenKernelDef` attached to `ir::Module`.
 - **C++ kernel codegen (PTO-ISA):** `emit_kernel_cpp()` in `src/python/pto_codegen.cpp`
-  - Includes `pto/rt/codegen/abi/ptoisa_bridge.hpp`, which provides wrappers for PTO-ISA ops used by generated kernels
+  - Includes `pto/wsp/codegen/abi/ptoisa_bridge.hpp`, which provides wrappers for PTO-ISA ops used by generated kernels
   - CPU-sim timing uses PTO-ISA’s `pto::cpu_sim` counters (Section 5)
 
 ### 8–10. Scheduling APIs (`dispatch/streams/stream_by/timing/task_graph`)
@@ -151,19 +151,19 @@ Entrypoint: schedule semantics are implemented in the emitted workload entrypoin
 
 ### 15–17. C++ IR + backend/concurrency utilities
 
-- **IR definitions:** `include/pto/rt/ir/*` (workload nodes, axes, codegen attachments)
-- **C++ codegen AST infra:** `include/pto/rt/codegen/cpp_ast.hpp`, `include/pto/rt/codegen/cpp_builder.hpp`, `src/pto/rt/codegen/cpp_emitter.cpp`
-- **Build + cache integration:** `include/pto/rt/codegen/cmake_compiler.hpp`, `src/pto/rt/codegen/cmake_compiler.cpp`
-- **(Optional) legacy backends:** `include/pto/rt/backend/*`, `src/pto/rt/backend/*`  
+- **IR definitions:** `include/pto/wsp/ir/*` (workload nodes, axes, codegen attachments)
+- **C++ codegen AST infra:** `include/pto/wsp/codegen/cpp_ast.hpp`, `include/pto/wsp/codegen/cpp_builder.hpp`, `src/pto/wsp/codegen/cpp_emitter.cpp`
+- **Build + cache integration:** `include/pto/wsp/codegen/cmake_compiler.hpp`, `src/pto/wsp/codegen/cmake_compiler.cpp`
+- **(Optional) legacy backends:** `include/pto/wsp/backend/*`, `src/pto/wsp/backend/*`  
   The v9 “golden path” uses `pto_ir_cpp.compile_codegen(...)` + generated artifacts (not the old CPUSimBackend registry model).
 
 ### 18. On-device task generation (NPU)
 
 - **As implemented:** generated **AICPU expander** (`aicpu/expand.cpp`) that expands tasks from workload IR into `NpuTaskDesc[]`.
   - Emitted by `emit_aicpu_expand_cpp_from_ir(...)` (`src/python/pto_codegen.cpp`)
-  - ABI: `include/pto/rt/codegen/abi/npu_plan_abi.hpp`
+  - ABI: `include/pto/wsp/codegen/abi/npu_plan_abi.hpp`
 
-The `docs/features.md` section mentions a “bytecode interpreter” style; PTO-RT’s current v9 implementation uses **generated AICPU C++** instead of a generic bytecode VM, but the goal is the same: avoid host-side O(tasks) expansion and enable dynamic shapes.
+The `docs/features.md` section mentions a “bytecode interpreter” style; PTO-WSP’s current v9 implementation uses **generated AICPU C++** instead of a generic bytecode VM, but the goal is the same: avoid host-side O(tasks) expansion and enable dynamic shapes.
 
 ---
 
@@ -190,12 +190,12 @@ The C++ binding compiles the C++ `ir::Module` into sources:
 
 The workload entrypoint calls kernels using the ABI in:
 
-- `include/pto/rt/codegen/abi/workload_abi.hpp`
-- `include/pto/rt/codegen/abi/kernel_abi.hpp`
+- `include/pto/wsp/codegen/abi/workload_abi.hpp`
+- `include/pto/wsp/codegen/abi/kernel_abi.hpp`
 
 ### 2.4 Build + cache the shared library (C++)
 
-`compile_sources_via_cmake(...)` (`src/pto/rt/codegen/cmake_compiler.cpp`) writes a small CMake project into:
+`compile_sources_via_cmake(...)` (`src/pto/wsp/codegen/cmake_compiler.cpp`) writes a small CMake project into:
 
 - `~/.cache/pto_wsp/codegen/src_<name>_<key>/`
 - `~/.cache/pto_wsp/codegen/build_<name>_<key>/`
@@ -218,7 +218,7 @@ The cache key includes compiler/cmake versions plus ABI headers and PTO-ISA umbr
 
 ### 3.1 Workload ABI (`RuntimeContext`)
 
-`include/pto/rt/codegen/abi/workload_abi.hpp` defines:
+`include/pto/wsp/codegen/abi/workload_abi.hpp` defines:
 
 - `get_axis_size(ctx, name)` for `DenseDyn`
 - `get_symbol_u64(ctx, id)` / `get_symbol_ptr(ctx, id)` for runtime-bound values (Section 4)
@@ -226,7 +226,7 @@ The cache key includes compiler/cmake versions plus ABI headers and PTO-ISA umbr
 
 ### 3.2 Kernel ABI (`KernelTaskDesc`)
 
-`include/pto/rt/codegen/abi/kernel_abi.hpp` defines:
+`include/pto/wsp/codegen/abi/kernel_abi.hpp` defines:
 
 - `task->args[]` (u64): loop indices, tail/mask dims, scalar params
 - `task->tensor_ptrs[]`, `task->tensor_strides[]` (u64): tensor base pointers and 2D view strides
@@ -236,10 +236,10 @@ Generated kernels are “PTO-ISA kernels”: they use `pto_wsp::ptoisa::{TLOAD/T
 
 ### 3.3 Two kernel authoring paths (v9)
 
-PTO-RT supports two complementary ways to author kernels:
+PTO-WSP supports two complementary ways to author kernels:
 
-- `pto.*` IR-traced kernels (`@kernel`): PTO-RT traces a high-level tile-language IR and emits PTO-ISA kernels.
-- `ptoisa.*` instruction-traced kernels (`@ptoisa_kernel`): PTO-RT traces a restricted Python authoring API and emits a C++ kernel body that calls `pto_wsp::ptoisa::...` wrappers directly.
+- `pto.*` IR-traced kernels (`@kernel`): PTO-WSP traces a high-level tile-language IR and emits PTO-ISA kernels.
+- `ptoisa.*` instruction-traced kernels (`@ptoisa_kernel`): PTO-WSP traces a restricted Python authoring API and emits a C++ kernel body that calls `pto_wsp::ptoisa::...` wrappers directly.
 
 `@kernel(cpp_src=...)` remains available as an escape hatch for manual C++ bodies.
 
@@ -328,7 +328,7 @@ For NPU codegen, the AICore dispatcher records the kernel-returned cycle report 
 
 - `NpuTaskDesc.t_end` (with `t_begin` reserved for future real device timestamps)
 
-ABI: `include/pto/rt/codegen/abi/npu_plan_abi.hpp`
+ABI: `include/pto/wsp/codegen/abi/npu_plan_abi.hpp`
 
 ---
 
@@ -360,11 +360,11 @@ This avoids recompiling the artifact when the runtime size changes.
 - Program compile/execute: `python/pto_wsp/program.py`
 - IR bridge (Python → C++ module): `python/pto_wsp/ir_bridge.py`
 - Codegen + loaders (C++ bindings): `src/python/pto_codegen.cpp`
-- CMake compiler/cache: `src/pto/rt/codegen/cmake_compiler.cpp`
+- CMake compiler/cache: `src/pto/wsp/codegen/cmake_compiler.cpp`
 - ABIs:
-  - `include/pto/rt/codegen/abi/kernel_abi.hpp`
-  - `include/pto/rt/codegen/abi/workload_abi.hpp`
-  - `include/pto/rt/codegen/abi/npu_plan_abi.hpp`
+  - `include/pto/wsp/codegen/abi/kernel_abi.hpp`
+  - `include/pto/wsp/codegen/abi/workload_abi.hpp`
+  - `include/pto/wsp/codegen/abi/npu_plan_abi.hpp`
 
 ---
 

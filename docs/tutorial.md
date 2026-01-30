@@ -1,4 +1,4 @@
-# PTO-RT v9 Tutorial (CPU-sim first, NPU emit-only here)
+# PTO-WSP v9 Tutorial (CPU-sim first, NPU emit-only here)
 
 > **Date:** 2026-01-28  
 > This tutorial shows the “golden path” for v9: **codegen-first CPU simulation**.  

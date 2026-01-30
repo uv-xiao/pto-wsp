@@ -1,4 +1,4 @@
-# PTO-RT v9 DeepSeek-V3.2 MoE Example
+# PTO-WSP v9 DeepSeek-V3.2 MoE Example
 # Makefile for running and testing the example
 
 PYTHON ?= python3

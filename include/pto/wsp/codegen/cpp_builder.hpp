@@ -1,9 +1,9 @@
-// Copyright 2026 PTO-RT Authors
+// Copyright 2026 PTO-WSP Authors
 // SPDX-License-Identifier: MIT
 
 #pragma once
 
-#include "pto/rt/codegen/cpp_ast.hpp"
+#include "pto/wsp/codegen/cpp_ast.hpp"
 
 #include <optional>
 #include <string>

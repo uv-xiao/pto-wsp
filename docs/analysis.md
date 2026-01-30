@@ -1,4 +1,4 @@
-# PTO-RT v9: Design Analysis (As-Built)
+# PTO-WSP v9: Design Analysis (As-Built)
 
 > **Date:** 2026-01-28  
 > **Purpose:** Explain *why* PTO‑RT looks the way it does in v9, and how the major features compose.  

@@ -1,4 +1,4 @@
-// Copyright 2026 PTO-RT Authors
+// Copyright 2026 PTO-WSP Authors
 // SPDX-License-Identifier: MIT
 
 #pragma once

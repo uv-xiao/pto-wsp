@@ -4,13 +4,13 @@
 
 #pragma once
 
-#include "pto/rt/ir/core.hpp"
-#include "pto/rt/ir/axis.hpp"
-#include "pto/rt/ir/workload.hpp"
-#include "pto/rt/ir/schedule.hpp"
-#include "pto/rt/ir/csp.hpp"
-#include "pto/rt/ir/module.hpp"
-#include "pto/rt/ir/visitor.hpp"
+#include "pto/wsp/ir/core.hpp"
+#include "pto/wsp/ir/axis.hpp"
+#include "pto/wsp/ir/workload.hpp"
+#include "pto/wsp/ir/schedule.hpp"
+#include "pto/wsp/ir/csp.hpp"
+#include "pto/wsp/ir/module.hpp"
+#include "pto/wsp/ir/visitor.hpp"
 
 #include <string>
 #include <vector>

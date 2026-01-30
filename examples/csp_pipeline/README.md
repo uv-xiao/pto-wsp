@@ -44,5 +44,5 @@ python examples/csp_pipeline/csp_pipeline_example.py
 ## Files
 
 - `examples/csp_pipeline/golden.py`: numpy reference (`square_pipeline_ref`)
-- `examples/csp_pipeline/pto_wsp_impl.py`: PTO-RT implementation (`run_csp_square_pipeline`)
+- `examples/csp_pipeline/pto_wsp_impl.py`: PTO-WSP implementation (`run_csp_square_pipeline`)
 - `examples/csp_pipeline/csp_pipeline_example.py`: runner + checks

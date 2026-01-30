@@ -2,9 +2,9 @@
 // Copyright (c) 2026 PTO Project
 // SPDX-License-Identifier: MIT
 
-#include "pto/rt/backend/cpu_sim.hpp"
-#include "pto/rt/backend/codegen.hpp"
-#include "pto/rt/backend/ascend_npu.hpp"
+#include "pto/wsp/backend/cpu_sim.hpp"
+#include "pto/wsp/backend/codegen.hpp"
+#include "pto/wsp/backend/ascend_npu.hpp"
 #include <iostream>
 #include <cassert>
 #include <atomic>
@@ -874,7 +874,7 @@ TEST(backend_ascend_lower) {
 // ============================================================
 
 int main() {
-    std::cout << "\n=== PTO-RT Backend Tests ===\n\n";
+    std::cout << "\n=== PTO-WSP Backend Tests ===\n\n";
 
     int passed = 0;
     int failed = 0;

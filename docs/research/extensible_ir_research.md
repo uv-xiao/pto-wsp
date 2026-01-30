@@ -7,13 +7,13 @@ Keep the current “Workload IR + Schedule IR + Module” shape, but make **leve
 
 ### Types to add (new headers)
 Create these headers (suggested layout):
-- `include/pto/rt/ir/core.hpp` (IDs, levels, base node, factory)
-- `include/pto/rt/ir/nodes.hpp` (axis/workload/csp/schedule nodes + `ExtOpNode`)
-- `include/pto/rt/ir/module.hpp` (Module, WorkloadDef, ScheduleDef, symbol tables)
-- `include/pto/rt/ir/visitor.hpp` (visitor + walker)
-- `include/pto/rt/ir/pass.hpp` (passes + pass manager + diagnostics)
-- `include/pto/rt/ir/rewriter.hpp` (tree rewriter used by transform passes)
-- `include/pto/rt/ir/ir.hpp` (umbrella include)
+- `include/pto/wsp/ir/core.hpp` (IDs, levels, base node, factory)
+- `include/pto/wsp/ir/nodes.hpp` (axis/workload/csp/schedule nodes + `ExtOpNode`)
+- `include/pto/wsp/ir/module.hpp` (Module, WorkloadDef, ScheduleDef, symbol tables)
+- `include/pto/wsp/ir/visitor.hpp` (visitor + walker)
+- `include/pto/wsp/ir/pass.hpp` (passes + pass manager + diagnostics)
+- `include/pto/wsp/ir/rewriter.hpp` (tree rewriter used by transform passes)
+- `include/pto/wsp/ir/ir.hpp` (umbrella include)
 
 ### `WorkloadLevel` (required)
 ```cpp

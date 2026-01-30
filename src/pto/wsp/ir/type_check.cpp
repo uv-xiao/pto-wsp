@@ -2,7 +2,7 @@
 // Copyright (c) 2026 PTO Project
 // SPDX-License-Identifier: MIT
 
-#include "pto/rt/ir/type_check.hpp"
+#include "pto/wsp/ir/type_check.hpp"
 
 namespace pto::wsp::ir {
 

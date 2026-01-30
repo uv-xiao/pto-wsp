@@ -30,7 +30,7 @@ def _ensure_numpy(t: Tensor) -> np.ndarray:
 
 
 # -----------------------------------------------------------------------------
-# ctypes ABI structs (mirror include/pto/rt/codegen/abi/*.hpp)
+# ctypes ABI structs (mirror include/pto/wsp/codegen/abi/*.hpp)
 # -----------------------------------------------------------------------------
 
 

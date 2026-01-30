@@ -1,4 +1,4 @@
-# PTO-RT Release Readiness Review (v9 design / 0.1.0 impl)
+# PTO-WSP Release Readiness Review (v9 design / 0.1.0 impl)
 
 > **Date:** 2026-01-29  
 > **Scope:** code + docs in this repo (CPU-sim runnable; NPU emit-only in this environment)
@@ -30,9 +30,9 @@ Revalidation (2026-01-29):
 
 - Repo license: `LICENSE` is **MIT**, and `pyproject.toml` declares `license = {text = "MIT"}`.
 - Previously, many C++ headers/sources declared `// SPDX-License-Identifier: Apache-2.0`, e.g.:
-  - `src/pto/rt/codegen/cmake_compiler.cpp:1`
+  - `src/pto/wsp/codegen/cmake_compiler.cpp:1`
   - `src/python/pto_codegen.cpp:2`
-  - many files under `include/pto/rt/**` and `src/pto/rt/**`
+  - many files under `include/pto/wsp/**` and `src/pto/wsp/**`
 
 Why this blocks release:
 - Users cannot know which license actually applies.
@@ -231,7 +231,7 @@ Status (2026-01-29):
 
 ### C1) Codegen compiler shelling-out uses `system()` with string commands
 
-`src/pto/rt/codegen/cmake_compiler.cpp` uses:
+`src/pto/wsp/codegen/cmake_compiler.cpp` uses:
 - `std::system(cmd.c_str())` and string-concatenated commands
 
 Risks:

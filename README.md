@@ -96,7 +96,7 @@ pto-wsp/
 │   ├── schedule.py          # ScheduleBuilder
 │   ├── primitives.py        # Primitive functions
 │   └── csp.py               # CSP primitives
-├── include/pto/rt/          # C++ headers
+├── include/pto/wsp/          # C++ headers
 │   ├── ir/                  # IR node types
 │   └── backend/             # Backend implementations
 ├── tests/                   # Unit tests

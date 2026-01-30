@@ -161,8 +161,8 @@ def test_ascend_npu_codegen_emits_cpp_tu_path_kernel_source():
 
     # Full translation unit with the kernel definition (no wrapper generation).
     tu_src = r'''
-#include "pto/rt/codegen/abi/kernel_abi.hpp"
-#include "pto/rt/codegen/abi/ptoisa_bridge.hpp"
+#include "pto/wsp/codegen/abi/kernel_abi.hpp"
+#include "pto/wsp/codegen/abi/ptoisa_bridge.hpp"
 #include <cstdint>
 #include <cstddef>
 

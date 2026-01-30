@@ -1,12 +1,12 @@
-# PTO-RT v9: NPU Backend Support (Ascend) — Implementation Notes
+# PTO-WSP v9: NPU Backend Support (Ascend) — Implementation Notes
 
 This document defines the **v9 deliverable** for Ascend NPU backend support and
-how it integrates with PTO-RT’s codegen-first model.
+how it integrates with PTO-WSP’s codegen-first model.
 
 **Reference baseline:** `references/pto-isa-wc/` (device runtime + host/aicpu/aicore
 codegen patterns). See `docs/reference/14_pto_isa_wc.md`.
 
-**PTO-RT constraints (keep our features):**
+**PTO-WSP constraints (keep our features):**
 - Preserve v9 scheduling semantics that are required for programmability:
   - **preserve/enforce:** `dispatch` + `task_window` (stall-only)
   - **explicitly unsupported (v9):** other schedule knobs (streams/stream_by/timing/ready policies/...)
@@ -48,7 +48,7 @@ pto-isa-wc provides an end-to-end structure that we reuse conceptually:
 - `runtime/aicore/*` kernel dispatcher
 - `runtime/graph/*` shared task graph structures + handshake protocol
 
-In PTO-RT v9 we keep PTO-RT’s schedule features and shift *where* tasks are
+In PTO-WSP v9 we keep PTO-WSP’s schedule features and shift *where* tasks are
 expanded:
 
 ### 2.1 Host vs AICPU responsibilities
@@ -63,7 +63,7 @@ expanded:
 - **AICore**:
   - executes kernels and signals completion back to AICPU.
 
-This matches PTO-RT’s “on-device task gen” direction; see `docs/design/on-device-task-gen.md`.
+This matches PTO-WSP’s “on-device task gen” direction; see `docs/design/on-device-task-gen.md`.
 
 ---
 
@@ -149,7 +149,7 @@ There are two complementary strategies:
 ## 6. Concrete Implementation References (pto-isa-wc)
 
 The following files in `references/pto-isa-wc/` provide the most actionable
-implementation patterns for PTO-RT’s v9 Ascend backend.
+implementation patterns for PTO-WSP’s v9 Ascend backend.
 
 ### 6.1 Device-side synchronization (AICPU ↔ AICore)
 - Handshake ABI (per-core, cacheline aligned): `references/pto-isa-wc/runtime/graph/handshake.h`
@@ -204,17 +204,17 @@ implementation patterns for PTO-RT’s v9 Ascend backend.
     - `rtAicpuKernelLaunchExWithArgs(...)`
     - `rtRegisterAllKernel(...)` + `rtKernelLaunchWithHandleV2(...)`
 
-### 6.7 Python binding shape (optional reference for PTO-RT tests/tools)
+### 6.7 Python binding shape (optional reference for PTO-WSP tests/tools)
 - Minimal pybind wrapper for Graph + DeviceRunner:
   - `references/pto-isa-wc/runtime/python/bindings.cpp`
   - `references/pto-isa-wc/runtime/python/graphbuilder.py`
 
-### 6.8 Dynamic tiling / tail strategy (useful for PTO-RT dynamic axes)
+### 6.8 Dynamic tiling / tail strategy (useful for PTO-WSP dynamic axes)
 - Reference implementation of “full tiles + tail tile” control flow:
   `references/pto-isa-wc/pto_dynamic_tiling.py`
   - Uses scalars like `num_full_tiles`, `tail_elements`, `has_tail` to avoid
     recompilation when only tensor sizes change.
-  - This maps naturally to PTO-RT’s “symbol table + runtime binding” design:
+  - This maps naturally to PTO-WSP’s “symbol table + runtime binding” design:
     axis sizes become symbols, tail handling uses runtime-provided counts/masks.
 
 ### 6.9 Generated Ascend kernel style (AscendC operator code)
@@ -222,4 +222,4 @@ implementation patterns for PTO-RT’s v9 Ascend backend.
   `references/pto-isa-wc/examples/output_ascend910b/**`
   - Example file: `references/pto-isa-wc/examples/output_ascend910b/torch_tensor/tensor_mm.cpp`
   - Use this to validate the shape of PTO-ISA-generated AICore kernels and
-    decide how PTO-RT wraps/dispatches them.
+    decide how PTO-WSP wraps/dispatches them.

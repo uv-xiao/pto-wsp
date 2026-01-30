@@ -1,4 +1,4 @@
-# PTO-RT v9 FlashInfer Decode Attention Example
+# PTO-WSP v9 FlashInfer Decode Attention Example
 # Makefile for running and testing the example
 
 PYTHON ?= python3

@@ -19,9 +19,9 @@ escape hatches for bring-up.
 
 ## Implementation Targets (in-repo)
 
-- `include/pto/rt/codegen/cpp_ast.hpp` — AST node types (expressions/statements/functions)
-- `include/pto/rt/codegen/cpp_builder.hpp` — small fluent helpers to construct the AST
-- `src/pto/rt/codegen/cpp_emitter.cpp` — pretty-printer / emitter
+- `include/pto/wsp/codegen/cpp_ast.hpp` — AST node types (expressions/statements/functions)
+- `include/pto/wsp/codegen/cpp_builder.hpp` — small fluent helpers to construct the AST
+- `src/pto/wsp/codegen/cpp_emitter.cpp` — pretty-printer / emitter
 
 These are the primitives intended for backend-owned emitters (CPU-sim and NPU).
 
@@ -50,8 +50,8 @@ These are the primitives intended for backend-owned emitters (CPU-sim and NPU).
 ## Example
 
 ```cpp
-#include "pto/rt/codegen/cpp_ast.hpp"
-#include "pto/rt/codegen/cpp_builder.hpp"
+#include "pto/wsp/codegen/cpp_ast.hpp"
+#include "pto/wsp/codegen/cpp_builder.hpp"
 
 using namespace pto::wsp::codegen::cpp;
 

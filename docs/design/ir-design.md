@@ -1383,9 +1383,9 @@ private:
 ### 10.4 Extension Registration Example
 
 ```cpp
-// src/pto/rt/ir/ext/npu/npu_ext.cpp
-#include "pto/rt/ir/ext.hpp"
-#include "pto/rt/ir/ext/npu/double_buffer.hpp"
+// src/pto/wsp/ir/ext/npu/npu_ext.cpp
+#include "pto/wsp/ir/ext.hpp"
+#include "pto/wsp/ir/ext/npu/double_buffer.hpp"
 
 namespace pto::wsp::ir::ext {
 
@@ -1412,10 +1412,10 @@ Extensions are built as separate libraries that self-register when linked:
 ```cmake
 # Core IR library (always built)
 add_library(pto_ir
-    src/pto/rt/ir/core.cpp
-    src/pto/rt/ir/visitor.cpp
-    src/pto/rt/ir/rewriter.cpp
-    src/pto/rt/ir/pass.cpp
+    src/pto/wsp/ir/core.cpp
+    src/pto/wsp/ir/visitor.cpp
+    src/pto/wsp/ir/rewriter.cpp
+    src/pto/wsp/ir/pass.cpp
 )
 target_include_directories(pto_ir PUBLIC include)
 target_compile_features(pto_ir PUBLIC cxx_std_23)
@@ -1424,7 +1424,7 @@ target_compile_features(pto_ir PUBLIC cxx_std_23)
 option(PTO_WSP_NPU_EXT "Build NPU IR extensions" ON)
 if(PTO_WSP_NPU_EXT)
     add_library(pto_ir_npu_ext
-        src/pto/rt/ir/ext/npu/npu_ext.cpp
+        src/pto/wsp/ir/ext/npu/npu_ext.cpp
     )
     target_link_libraries(pto_ir_npu_ext PUBLIC pto_ir)
 endif()
@@ -1433,7 +1433,7 @@ endif()
 option(PTO_WSP_AIE_EXT "Build AIE IR extensions" OFF)
 if(PTO_WSP_AIE_EXT)
     add_library(pto_ir_aie_ext
-        src/pto/rt/ir/ext/aie/aie_ext.cpp
+        src/pto/wsp/ir/ext/aie/aie_ext.cpp
     )
     target_link_libraries(pto_ir_aie_ext PUBLIC pto_ir)
 endif()
@@ -1445,7 +1445,7 @@ target_link_libraries(pto_backend_npu PRIVATE pto_ir_npu_ext)
 ### 10.6 Directory Structure
 
 ```
-include/pto/rt/ir/
+include/pto/wsp/ir/
   core.hpp          # NodeId, NodeKind, IRNode, IRFactory
   nodes.hpp         # All core node types
   ext.hpp           # ExtOpNode, ExtOpRegistry, macros
@@ -1464,7 +1464,7 @@ include/pto/rt/ir/
       pipeline_depth.hpp
       task_window.hpp
 
-src/pto/rt/ir/
+src/pto/wsp/ir/
   core.cpp
   visitor.cpp
   rewriter.cpp
@@ -1930,7 +1930,7 @@ IRNode (with WorkloadLevel)
 ### 14.4 Header Organization (Recommended)
 
 ```text
-include/pto/rt/ir/
+include/pto/wsp/ir/
 ├── core.hpp      // NodeId, WorkloadLevel, IRNode, IRFactory
 ├── nodes.hpp     // All core node types
 ├── ext.hpp       // ExtOpNode, ExtOpRegistry, REGISTER_EXT_OP macro

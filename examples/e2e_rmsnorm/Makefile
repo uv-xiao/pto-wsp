@@ -1,4 +1,4 @@
-# PTO-RT v9 End-to-End RMSNorm Example
+# PTO-WSP v9 End-to-End RMSNorm Example
 # Makefile for running and testing the example
 
 PYTHON ?= python3

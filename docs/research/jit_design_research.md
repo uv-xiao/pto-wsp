@@ -1,8 +1,8 @@
-# JIT Kernel Design Research for PTO-RT v9
+# JIT Kernel Design Research for PTO-WSP v9
 
 ## Overview
 
-This document analyzes JIT kernel patterns from Triton, JAX, and TileLang to design PTO-RT v9's `@kernel` decorator that eliminates string-based task definitions (addressing requirement R7).
+This document analyzes JIT kernel patterns from Triton, JAX, and TileLang to design PTO-WSP v9's `@kernel` decorator that eliminates string-based task definitions (addressing requirement R7).
 
 ---
 
@@ -23,7 +23,7 @@ This document analyzes JIT kernel patterns from Triton, JAX, and TileLang to des
 - **Triton**: You call a kernel object directly (no strings): `kernel[grid](...)`. citeturn0search0
 - **JAX**: You call the jitted function directly like a normal function: `f_jit(x)`. citeturn0search3
 - **TileLang**: You typically get a compiled kernel object (often from `@tilelang.jit`) and call it directly: `kernel(a, b, c)`. citeturn0search2
-- **PTO-RT v9 (current repo state)**: user-facing docs still show `task("attn_kernel", ...)` (e.g. `README.md`, `docs/spec.md`), but `docs/npu-design.md` already sketches a non-string path: `KernelHandle.task(**bindings)` with a `kernel_handle` stored on the task node.
+- **PTO-WSP v9 (current repo state)**: user-facing docs still show `task("attn_kernel", ...)` (e.g. `README.md`, `docs/spec.md`), but `docs/npu-design.md` already sketches a non-string path: `KernelHandle.task(**bindings)` with a `kernel_handle` stored on the task node.
 
 **4) Compile-time vs runtime compilation strategies**
 
@@ -31,7 +31,7 @@ This document analyzes JIT kernel patterns from Triton, JAX, and TileLang to des
 - **JAX**: Runtime compilation on first call for a given abstract signature; supports ahead-of-time-ish via `.lower(...).compile()` to force compilation. citeturn0search4
 - **TileLang**: `tilelang.jit` supports both **lazy** compilation (compile at first call) and eager-ish behavior depending on the decorator configuration. citeturn0search2
 
-**5) A PTO-RT v9 `@kernel` decorator design (direct calls inside workload contexts, no `task("name", ...)`)**
+**5) A PTO-WSP v9 `@kernel` decorator design (direct calls inside workload contexts, no `task("name", ...)`)**
 
 Leverage the split already implied by `docs/npu-design.md`: *kernel definition artifact* (like Triton/TileLang) + *workload task emission* (builder context).
 
@@ -52,7 +52,7 @@ Recommended shape:
     - `attn_kernel[b, h](Q=..., K=..., V=..., O=...)`
   - Bind resources by **keyword** (like `KernelHandle.task(**bindings)` in `docs/npu-design.md`) so interface mismatches are caught early.
 
-Compilation model that matches Triton/JAX expectations while fitting PTO-RT:
+Compilation model that matches Triton/JAX expectations while fitting PTO-WSP:
 
 - Default: **AOT at `Workload.compile(target=...)`** = compile all referenced kernels once (deterministic builds, good for deployment).
 - Optional: **runtime JIT** fallback = if a kernel hasn’t been compiled for `(target, dtypes/layouts, constexpr values, schedule hints)`, compile on first `Program.execute()` and cache (Triton/JAX-like behavior).
@@ -72,7 +72,7 @@ with workload() as w:
 
 ---
 
-## 6) Key Design Decisions for PTO-RT v9
+## 6) Key Design Decisions for PTO-WSP v9
 
 ### 6.1 KernelRef Object
 

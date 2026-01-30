@@ -1,7 +1,7 @@
-// PTO-RT v9 - C++ codegen AST smoke test
+// PTO-WSP v9 - C++ codegen AST smoke test
 
-#include "pto/rt/codegen/cpp_ast.hpp"
-#include "pto/rt/codegen/cpp_builder.hpp"
+#include "pto/wsp/codegen/cpp_ast.hpp"
+#include "pto/wsp/codegen/cpp_builder.hpp"
 
 #include <cassert>
 #include <iostream>

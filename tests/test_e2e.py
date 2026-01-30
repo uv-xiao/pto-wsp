@@ -1,5 +1,5 @@
 """
-End-to-end tests for PTO-RT (codegen-first).
+End-to-end tests for PTO-WSP (codegen-first).
 
 These tests validate:
 - Python DSL (@kernel/@workload) builds IR correctly

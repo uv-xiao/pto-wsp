@@ -1,11 +1,11 @@
 ---
 name: e2e-example
-description: List, run, and scaffold PTO-RT examples under `examples/` with a validation checklist (imports, codegen artifacts, synchronize, output checks, cycles/timing).
+description: List, run, and scaffold PTO-WSP examples under `examples/` with a validation checklist (imports, codegen artifacts, synchronize, output checks, cycles/timing).
 ---
 
 # e2e-example
 
-Manage and validate PTO-RT examples with a simple subcommand-style flow:
+Manage and validate PTO-WSP examples with a simple subcommand-style flow:
 
 - `list`: show available examples
 - `run <name>`: run and validate an example

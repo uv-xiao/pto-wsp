@@ -42,9 +42,9 @@ PTO Workload-Schedule Programming (PTO-WSP) framework enables dynamic LLM worklo
 | Layout Types (R10) | `pto_wsp.types` | ✓ Done | [Details](#12-layout-types-r10) |
 | Linear Layout (F₂) | `pto_wsp.linear_layout` | ✓ Done | [Details](#13-linear-layout-f2) |
 | Type Checker | `pto_wsp.type_checker` | ✓ Done | [Details](#14-type-checker) |
-| C++ IR | `include/pto/rt/ir/` | ✓ Done | [Details](#15-c-ir) |
-| Backend Architecture | `include/pto/rt/backend/` | ✓ Done | [Details](#16-backend-architecture) |
-| Concurrent Utilities | `include/pto/rt/concurrent/` | ✓ Done | [Details](#17-concurrent-utilities) |
+| C++ IR | `include/pto/wsp/ir/` | ✓ Done | [Details](#15-c-ir) |
+| Backend Architecture | `include/pto/wsp/backend/` | ✓ Done | [Details](#16-backend-architecture) |
+| Concurrent Utilities | `include/pto/wsp/concurrent/` | ✓ Done | [Details](#17-concurrent-utilities) |
 
 ---
 
@@ -668,7 +668,7 @@ namespace pto::wsp::ir {
 - Visitor pattern for traversal
 - Type checking pass
 
-**Code**: `include/pto/rt/ir/`, `src/pto/rt/ir/`
+**Code**: `include/pto/wsp/ir/`, `src/pto/wsp/ir/`
 **Docs**: `docs/design/ir-design.md`
 
 ---
@@ -700,7 +700,7 @@ namespace pto::wsp::backend {
 | CPU Sim | `cpu_sim` | Debug and validation |
 | Ascend NPU | `ascend_npu` | Production deployment |
 
-**Code**: `include/pto/rt/backend/`, `src/pto/rt/backend/`
+**Code**: `include/pto/wsp/backend/`, `src/pto/wsp/backend/`
 **Docs**: `docs/design/backend-arch.md`
 
 ---
@@ -712,7 +712,7 @@ namespace pto::wsp::backend {
 Implements L12 requirement for backend-neutral concurrency utilities.
 
 ```cpp
-#include "pto/rt/concurrent/utilities.hpp"
+#include "pto/wsp/concurrent/utilities.hpp"
 
 namespace pto::wsp::concurrent {
     // Completion tracking
@@ -772,7 +772,7 @@ enum class ExecDomain {
 };
 ```
 
-**Code**: `include/pto/rt/concurrent/utilities.hpp`
+**Code**: `include/pto/wsp/concurrent/utilities.hpp`
 
 ---
 
@@ -788,7 +788,7 @@ Host-side expansion (pto-isa-lh):
 - Transfer ~400MB to device
 - High latency before execution starts
 
-On-device generation (PTO-RT v9):
+On-device generation (PTO-WSP v9):
 - Compile workload → ~4KB bytecode
 - Transfer bytecode to each AICPU
 - Each AICPU generates only its own tasks
@@ -845,7 +845,7 @@ void WorkloadInterpreter::interpret() {
 | Dynamic Shapes | Rebuild graph | Same bytecode |
 | Memory | O(tasks) on host | O(1) bytecode |
 
-**Code**: `include/pto/rt/backend/` (on-device generation infrastructure)
+**Code**: `include/pto/wsp/backend/` (on-device generation infrastructure)
 **Docs**: `docs/design/on-device-task-gen.md`
 
 ---

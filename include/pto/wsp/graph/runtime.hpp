@@ -1,13 +1,13 @@
-// Copyright 2026 PTO-RT Authors
+// Copyright 2026 PTO-WSP Authors
 // SPDX-License-Identifier: MIT
 
 #pragma once  // API-2 FIX: Consistent include guard style
 // (was: #ifndef PTO_WSP_GRAPH_RUNTIME_HPP)
 
-#include "pto/rt/graph/types.hpp"
-#include "pto/rt/graph/storage.hpp"
-#include "pto/rt/graph/tensor_map.hpp"
-#include "pto/rt/graph/ready_queue.hpp"
+#include "pto/wsp/graph/types.hpp"
+#include "pto/wsp/graph/storage.hpp"
+#include "pto/wsp/graph/tensor_map.hpp"
+#include "pto/wsp/graph/ready_queue.hpp"
 
 #include <memory>
 #include <functional>

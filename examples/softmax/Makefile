@@ -1,4 +1,4 @@
-# PTO-RT v9 Online Softmax Example
+# PTO-WSP v9 Online Softmax Example
 # Makefile for running and testing the example
 
 PYTHON ?= python3

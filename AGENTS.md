@@ -47,8 +47,8 @@ The `pto_ir_cpp` C++ bindings module is available via two import paths:
 pto-wsp/
   docs/                 # design docs + reference notes
   python/pto_wsp/        # Python frontend
-  include/pto/rt/       # C++ headers
-  src/pto/rt/           # C++ implementation
+  include/pto/wsp/       # C++ headers
+  src/pto/wsp/           # C++ implementation
   tests/                # unit/integration tests
   examples/             # examples
   3rdparty/             # external dependencies

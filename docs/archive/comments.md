@@ -25,7 +25,7 @@ V9 version has many problems to fix:
 ---
 
 1. Although we cannot validate NPU (Ascend) backends, we should validate the CPU simulation backend with full end-to-end examples, as did in pto-isa-lh's bgemm, softmax, llama, and we should also add a deepseek-v3.2-exp example.
-2. The file structure is kind of wierd: all C++ things are hpp @include/pto/rt. We should seperate header files and implementation. You should act as a C++ expert to architect the file organization and building system (CMake).
+2. The file structure is kind of wierd: all C++ things are hpp @include/pto/wsp. We should seperate header files and implementation. You should act as a C++ expert to architect the file organization and building system (CMake).
 3. The documentation set should be consistent and up-to-date; avoid relying on separate “task plan” files as the source of truth.
 4. We need to refine the documents: analysis.md is for rationale/requirement analysis and discussion, showing why our technique looks like this; spec.md holds the detailed design and implementation key points; some other documents hold the indivudial techniques' details; and we need a new document, features.md, which should iterate all features in current version, each one should be concisely explained (can be visual if necessary), and provide links to detailed explanation or codes.
 

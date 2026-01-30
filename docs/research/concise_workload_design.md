@@ -1,4 +1,4 @@
-# Concise Workload Design for PTO-RT v9
+# Concise Workload Design for PTO-WSP v9
 
 ## Overview
 

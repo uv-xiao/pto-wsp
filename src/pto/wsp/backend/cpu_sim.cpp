@@ -1,8 +1,8 @@
 // PTO Workload-Schedule Programming (PTO-WSP) framework v9 - CPU Simulation Backend Implementation
-// Copyright 2026 PTO-RT Authors
+// Copyright 2026 PTO-WSP Authors
 // SPDX-License-Identifier: MIT
 
-#include "pto/rt/backend/cpu_sim.hpp"
+#include "pto/wsp/backend/cpu_sim.hpp"
 
 namespace pto::wsp::backend::cpu {
 

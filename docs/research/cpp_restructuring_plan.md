@@ -51,7 +51,7 @@ Split 5 high-priority files with substantial implementations. Remaining files ke
 
 ```
 pto-wsp/
-├── include/pto/rt/          # Public headers (declarations only)
+├── include/pto/wsp/          # Public headers (declarations only)
 │   ├── ir/
 │   │   ├── axis.hpp         # Keep header-only
 │   │   ├── core.hpp         # Keep header-only
@@ -79,7 +79,7 @@ pto-wsp/
 │       ├── codegen.hpp      # Declarations only
 │       └── cpu_sim.hpp      # Declarations only
 │
-└── src/pto/rt/              # Implementation files
+└── src/pto/wsp/              # Implementation files
     ├── ir/
     │   ├── ext.cpp
     │   ├── npu.cpp
@@ -110,9 +110,9 @@ pto-wsp/
 
 # Collect sources
 file(GLOB_RECURSE PTO_WSP_SOURCES
-    "src/pto/rt/ir/*.cpp"
-    "src/pto/rt/graph/*.cpp"
-    "src/pto/rt/backend/*.cpp"
+    "src/pto/wsp/ir/*.cpp"
+    "src/pto/wsp/graph/*.cpp"
+    "src/pto/wsp/backend/*.cpp"
 )
 
 # Create library (STATIC or SHARED)
@@ -140,14 +140,14 @@ install(DIRECTORY include/pto DESTINATION include)
 
 ### Step 1: Identify What to Move
 
-In `include/pto/rt/ir/parser.hpp`:
+In `include/pto/wsp/ir/parser.hpp`:
 - **Keep in header**: Class declarations, inline methods (<3 lines)
 - **Move to cpp**: Method implementations, helper functions
 
 ### Step 2: Create Declaration Header
 
 ```cpp
-// include/pto/rt/ir/parser.hpp
+// include/pto/wsp/ir/parser.hpp
 #pragma once
 
 #include "ir.hpp"
@@ -226,8 +226,8 @@ std::unique_ptr<Module> parse_string(const std::string& source);
 ### Step 3: Create Implementation File
 
 ```cpp
-// src/pto/rt/ir/parser.cpp
-#include "pto/rt/ir/parser.hpp"
+// src/pto/wsp/ir/parser.cpp
+#include "pto/wsp/ir/parser.hpp"
 #include <fstream>
 #include <sstream>
 #include <cctype>
@@ -403,8 +403,8 @@ After each phase:
 
 | ID | Issue | Location | Status |
 |----|-------|----------|--------|
-| BUG-1 | **Dangling reference capture**: `task` is captured by reference in lambda but goes out of scope | `src/pto/rt/backend/cpu_sim.cpp:217-224` | ✅ DONE |
-| BUG-2 | **Thread safety data race**: `fanin` decremented without atomics in multi-threaded context | `src/pto/rt/graph/runtime.cpp:207-212` | ✅ DONE |
+| BUG-1 | **Dangling reference capture**: `task` is captured by reference in lambda but goes out of scope | `src/pto/wsp/backend/cpu_sim.cpp:217-224` | ✅ DONE |
+| BUG-2 | **Thread safety data race**: `fanin` decremented without atomics in multi-threaded context | `src/pto/wsp/graph/runtime.cpp:207-212` | ✅ DONE |
 
 **BUG-1 Fix**:
 ```cpp
@@ -471,8 +471,8 @@ for (TaskId dep : storage_.fanout_span(tid)) {
 | CPP-4 | `get_fanout()` allocates vector each call | Return `std::span<const TaskId>` instead | ✅ DONE |
 
 **CPP-1 locations**:
-- `src/pto/rt/graph/runtime.cpp:27` - `WindowState::enter()` spins with `yield()`
-- `src/pto/rt/graph/runtime.cpp:78` - `IssueGate::acquire()` spins
+- `src/pto/wsp/graph/runtime.cpp:27` - `WindowState::enter()` spins with `yield()`
+- `src/pto/wsp/graph/runtime.cpp:78` - `IssueGate::acquire()` spins
 
 ---
 
@@ -546,7 +546,7 @@ while (next_head == tail_.load(std::memory_order_acquire)) {
 | ID | Issue | Location | Recommendation | Status |
 |----|-------|----------|----------------|--------|
 | UNUSED-1 | **`TaskNodeRuntime` defined but unused** | `graph/types.hpp:176+` | Documented as retained for future use | ✅ DONE |
-| UNUSED-2 | **Parser TODOs for workload body parsing** | `src/pto/rt/ir/parser.cpp:349,362,412` | Feature incomplete - body parsing not yet implemented | DEFERRED (feature) |
+| UNUSED-2 | **Parser TODOs for workload body parsing** | `src/pto/wsp/ir/parser.cpp:349,362,412` | Feature incomplete - body parsing not yet implemented | DEFERRED (feature) |
 
 ---
 

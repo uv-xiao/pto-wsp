@@ -1,12 +1,12 @@
 # PTO Workload-Schedule Programming (PTO-WSP) framework v9: Concurrent Mechanism Design
 
-This document describes the concurrent execution mechanisms in PTO-RT, with detailed analysis of patterns from pto-isa-lh (task graph runtime) and pto-isa-wc (work-stealing runtime).
+This document describes the concurrent execution mechanisms in PTO-WSP, with detailed analysis of patterns from pto-isa-lh (task graph runtime) and pto-isa-wc (work-stealing runtime).
 
 ---
 
 ## 1. Overview
 
-PTO-RT supports two primary concurrent execution models:
+PTO-WSP supports two primary concurrent execution models:
 
 | Model | Source | API | Use Case |
 |-------|--------|-----|----------|
@@ -349,10 +349,10 @@ struct Handshake {
 4. AICPU updates dependencies, finds next ready task
 5. On shutdown: AICPU sets `control = 1`, AICore exits
 
-### 4.2 PTO-RT Implementation
+### 4.2 PTO-WSP Implementation
 
 ```cpp
-// In include/pto/rt/concurrent/utilities.hpp
+// In include/pto/wsp/concurrent/utilities.hpp
 class DomainHandshake {
     std::atomic<bool> cpu_ready_{false};
     std::atomic<bool> accelerator_ready_{false};
@@ -422,7 +422,7 @@ For heterogeneous execution:
 
 ---
 
-## 7. Integration with PTO-RT API
+## 7. Integration with PTO-WSP API
 
 ### 7.1 Python API
 
@@ -476,6 +476,6 @@ program = (workload()
 
 - pto-isa-lh: `docs/reference/13_pto_isa_lh.md`
 - pto-isa-wc: `docs/reference/14_pto_isa_wc.md`
-- C++ Utilities: `include/pto/rt/concurrent/utilities.hpp`
-- Ready Queue: `include/pto/rt/graph/ready_queue.hpp`
-- Runtime: `include/pto/rt/graph/runtime.hpp`
+- C++ Utilities: `include/pto/wsp/concurrent/utilities.hpp`
+- Ready Queue: `include/pto/wsp/graph/ready_queue.hpp`
+- Runtime: `include/pto/wsp/graph/runtime.hpp`

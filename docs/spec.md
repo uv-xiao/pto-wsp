@@ -659,7 +659,7 @@ explicitly implemented and validated in this repo.
 
 ## 6. Kernel Definition (JIT-Style)
 
-PTO-RT v9 supports **JIT-style kernel definitions** that eliminate string-based task names (R7). Kernels are defined as decorated Python functions and called directly within workload contexts.
+PTO-WSP v9 supports **JIT-style kernel definitions** that eliminate string-based task names (R7). Kernels are defined as decorated Python functions and called directly within workload contexts.
 
 ### 6.1 The @jit_kernel Decorator (RECOMMENDED)
 

@@ -2,22 +2,16 @@
 
 ## pto-isa
 
-PTO Tile Library - the core ISA that pto-wsp extends.
+PTO Tile Library - the core ISA
 
 **Repository:** https://gitcode.com/uvxiao/pto-isa.git
 
 ### Setup
 
-pto-isa is included as a git submodule. After cloning pto-wsp:
+pto-isa is included as a git submodule:
 
 ```bash
 git submodule update --init --recursive
-```
-
-Or clone with submodules:
-
-```bash
-git clone --recursive https://gitcode.com/uvxiao/pto-wsp.git
 ```
 
 ### Updating

@@ -2,7 +2,7 @@
 // Copyright (c) 2026 PTO Project
 // SPDX-License-Identifier: MIT
 
-#include "pto/rt/graph/graph.hpp"
+#include "pto/wsp/graph/graph.hpp"
 #include <iostream>
 #include <cassert>
 #include <thread>
@@ -479,7 +479,7 @@ TEST(concurrent_ready_queue) {
 // ============================================================
 
 int main() {
-    std::cout << "\n=== PTO-RT Task Graph Infrastructure Tests ===\n\n";
+    std::cout << "\n=== PTO-WSP Task Graph Infrastructure Tests ===\n\n";
 
     int passed = 0;
     int failed = 0;

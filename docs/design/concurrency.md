@@ -1,10 +1,10 @@
-# PTO-RT Concurrency Mechanisms
+# PTO-WSP Concurrency Mechanisms
 
 This document describes the concurrency features available in each backend.
 
 ## 1. Overview
 
-PTO-RT provides concurrent execution through multiple mechanisms:
+PTO-WSP provides concurrent execution through multiple mechanisms:
 
 | Mechanism | CPU Sim | Ascend NPU |
 |-----------|---------|------------|
@@ -20,7 +20,7 @@ PTO-RT provides concurrent execution through multiple mechanisms:
 The CPU backend uses a thread pool for parallel task execution:
 
 ```cpp
-// From include/pto/rt/backend/cpu_sim.hpp
+// From include/pto/wsp/backend/cpu_sim.hpp
 class CPUSimProgram : public Program {
     ThreadPool thread_pool_;        // Worker threads
     std::queue<TaskNode*> ready_;   // Ready-to-execute tasks

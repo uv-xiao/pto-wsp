@@ -1,4 +1,4 @@
-// Copyright 2026 PTO-RT Authors
+// Copyright 2026 PTO-WSP Authors
 // SPDX-License-Identifier: MIT
 
 #pragma once
@@ -6,7 +6,7 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "pto/rt/codegen/abi/kernel_abi.hpp"
+#include "pto/wsp/codegen/abi/kernel_abi.hpp"
 
 extern "C" {
 

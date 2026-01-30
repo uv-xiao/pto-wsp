@@ -6,14 +6,14 @@
 #include <pybind11/stl.h>
 #include <pybind11/functional.h>
 
-#include "pto/rt/ir/ir.hpp"
-#include "pto/rt/ir/codegen.hpp"
-#include "pto/rt/ir/scalar_expr.hpp"
-#include "pto/rt/graph/graph.hpp"
-#include "pto/rt/backend/backend.hpp"
-#include "pto/rt/backend/cpu_sim.hpp"
-#include "pto/rt/backend/ascend_npu.hpp"
-#include "pto/rt/codegen/cmake_compiler.hpp"
+#include "pto/wsp/ir/ir.hpp"
+#include "pto/wsp/ir/codegen.hpp"
+#include "pto/wsp/ir/scalar_expr.hpp"
+#include "pto/wsp/graph/graph.hpp"
+#include "pto/wsp/backend/backend.hpp"
+#include "pto/wsp/backend/cpu_sim.hpp"
+#include "pto/wsp/backend/ascend_npu.hpp"
+#include "pto/wsp/codegen/cmake_compiler.hpp"
 
 namespace py = pybind11;
 using namespace pto::wsp;
@@ -816,7 +816,7 @@ void bind_backend(py::module_& m) {
 // ============================================================
 
 PYBIND11_MODULE(pto_ir_cpp, m) {
-    m.doc() = "PTO-RT v9 C++ IR Python Bindings";
+    m.doc() = "PTO-WSP v9 C++ IR Python Bindings";
 
     bind_ir(m);
     bind_graph(m);

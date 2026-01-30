@@ -215,7 +215,7 @@ auto schedule_v2 = workload.schedule()
 ### 5.1 实现架构
 
 ```
-include/pto/rt/
+include/pto/wsp/
 ├── types.hpp          # 核心类型：Axis, Task, Tensor
 ├── workload.hpp       # Workload<Axes, Task, Deps>
 ├── primitives.hpp     # parallel_for, for_each, select

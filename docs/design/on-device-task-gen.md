@@ -1,4 +1,4 @@
-# On-Device Task Generation Design for PTO-RT v9
+# On-Device Task Generation Design for PTO-WSP v9
 
 > **Status (as-built):** PTO‑RT v9 currently emits an **AICPU expander C++ translation unit** during NPU codegen
 > (`target="ascend_npu"`). This document describes a **bytecode interpreter** approach that is a design exploration /
@@ -6,7 +6,7 @@
 
 ## Executive Summary
 
-This document describes the on-device task generation architecture for PTO-RT v9, which represents a fundamental shift from the host-side task expansion approach used in pto-isa-lh/wc.
+This document describes the on-device task generation architecture for PTO-WSP v9, which represents a fundamental shift from the host-side task expansion approach used in pto-isa-lh/wc.
 
 **Key Insight**: Workload is a **program** that generates tasks, not a **list** of tasks.
 
@@ -396,7 +396,7 @@ DispatchConfig {
 
 ### 7.1 Quantitative Comparison
 
-| Metric | pto-isa-lh/wc (Host Expansion) | PTO-RT v9 (On-Device Gen) |
+| Metric | pto-isa-lh/wc (Host Expansion) | PTO-WSP v9 (On-Device Gen) |
 |--------|-------------------------------|---------------------------|
 | **Data Transfer** | O(tasks) * sizeof(PendingTask) | O(IR size) + O(config) |
 | | ~200K * 2KB = 400MB | ~4KB bytecode |
@@ -415,7 +415,7 @@ Host: Expand parallel_for(batch=4, heads=32, q_tiles=512, kv_tiles=512)
       → Transfer 200K * 2KB = 400MB
 ```
 
-**PTO-RT v9 approach:**
+**PTO-WSP v9 approach:**
 ```
 Host: Compile workload IR → ~4KB bytecode
       → Transfer bytecode + dispatch config (~8KB total)
@@ -426,7 +426,7 @@ Device: Each AICPU interprets bytecode
 
 ### 7.3 Feature Comparison
 
-| Feature | pto-isa-lh/wc | PTO-RT v9 On-Device |
+| Feature | pto-isa-lh/wc | PTO-WSP v9 On-Device |
 |---------|---------------|---------------------|
 | **Workload representation** | Flat task list | Structured bytecode |
 | **Task generation location** | Host CPU | AICPU |
@@ -465,7 +465,7 @@ Device: Each AICPU interprets bytecode
 ## 9. Integration with Backend Architecture
 
 ```cpp
-// In include/pto/rt/backend/npu/on_device_gen.hpp
+// In include/pto/wsp/backend/npu/on_device_gen.hpp
 namespace pto::wsp::backend::npu {
 
 class OnDeviceGenerator {

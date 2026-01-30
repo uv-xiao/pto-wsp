@@ -2,9 +2,9 @@
 //
 // This file is inserted into:
 //   extern "C" uint64_t <kernel>(const KernelTaskDesc* task, CSPTContext* cspt)
-// by PTO-RT's custom-kernel wrapper. The wrapper already includes:
-//   - pto/rt/codegen/abi/kernel_abi.hpp
-//   - pto/rt/codegen/abi/ptoisa_bridge.hpp
+// by PTO-WSP's custom-kernel wrapper. The wrapper already includes:
+//   - pto/wsp/codegen/abi/kernel_abi.hpp
+//   - pto/wsp/codegen/abi/ptoisa_bridge.hpp
 //
 // Contract:
 // - tensor_ptrs[0] = scores: f32 [1,32]

@@ -4,8 +4,8 @@
 
 #pragma once
 
-#include "pto/rt/ir/ir.hpp"
-#include "pto/rt/ir/npu.hpp"
+#include "pto/wsp/ir/ir.hpp"
+#include "pto/wsp/ir/npu.hpp"
 
 #include <string>
 #include <sstream>

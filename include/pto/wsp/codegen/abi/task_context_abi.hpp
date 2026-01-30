@@ -1,11 +1,11 @@
-// Copyright 2026 PTO-RT Authors
+// Copyright 2026 PTO-WSP Authors
 // SPDX-License-Identifier: MIT
 
 #pragma once
 
 #include <cstdint>
 
-#include "pto/rt/codegen/abi/workload_abi.hpp"
+#include "pto/wsp/codegen/abi/workload_abi.hpp"
 
 // Minimal task-context ABI for codegen-first v9 artifacts.
 //

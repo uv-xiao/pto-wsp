@@ -1,8 +1,8 @@
-# PTO-RT v9: Formal Type System
+# PTO-WSP v9: Formal Type System
 
 ## 1. Overview
 
-This document formally specifies the type system for PTO-RT v9, covering:
+This document formally specifies the type system for PTO-WSP v9, covering:
 
 1. **Type definitions** for axes, tensors, layouts, workloads, and tasks
 2. **Type checking rules** at Python builder and IR compiler levels
@@ -23,8 +23,8 @@ This document formally specifies the type system for PTO-RT v9, covering:
 | Level | Location | When | What's Checked |
 |-------|----------|------|----------------|
 | **L1: Python Builder** | `python/pto_wsp/` | Workload construction | Kernel signatures, layout compatibility |
-| **L2: IR Type Pass** | `src/pto/rt/ir/` | `workload.compile()` | Cross-workload consistency, axis bounds |
-| **L3: Backend Lowering** | `src/pto/rt/backend/` | Backend `lower()` | Physical layout feasibility, memory constraints |
+| **L2: IR Type Pass** | `src/pto/wsp/ir/` | `workload.compile()` | Cross-workload consistency, axis bounds |
+| **L3: Backend Lowering** | `src/pto/wsp/backend/` | Backend `lower()` | Physical layout feasibility, memory constraints |
 
 ---
 
@@ -474,7 +474,7 @@ class KernelRef(Protocol):
 The IR type pass validates type consistency after Python-to-IR conversion:
 
 ```cpp
-// include/pto/rt/ir/passes/type_check_pass.hpp
+// include/pto/wsp/ir/passes/type_check_pass.hpp
 
 namespace pto::wsp::ir {
 
@@ -535,7 +535,7 @@ struct LayoutInfo {
 The compiler infers workload types from structure:
 
 ```cpp
-// include/pto/rt/ir/passes/type_inference_pass.hpp
+// include/pto/wsp/ir/passes/type_inference_pass.hpp
 
 namespace pto::wsp::ir {
 
@@ -578,7 +578,7 @@ DependencyType inferDependency(NodeKind kind) {
 Each backend enforces additional type constraints:
 
 ```cpp
-// include/pto/rt/backend/type_constraints.hpp
+// include/pto/wsp/backend/type_constraints.hpp
 
 namespace pto::wsp::backend {
 

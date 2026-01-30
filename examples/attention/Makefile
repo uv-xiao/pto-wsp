@@ -1,4 +1,4 @@
-# PTO-RT v9 Multi-Head Attention Example
+# PTO-WSP v9 Multi-Head Attention Example
 # Makefile for running and testing the example
 
 PYTHON ?= python3

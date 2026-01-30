@@ -27,6 +27,9 @@ htmlcov/
 .ralph-loop/
 .claude/
 
+# Local Ascend/CANN remote testing config (machine-specific)
+.ASCEND_SERVER.toml
+
 # OS
 .DS_Store
 Thumbs.db

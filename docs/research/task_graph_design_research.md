@@ -1,4 +1,4 @@
-# Task Graph vs Stream Execution Research for PTO-RT v9
+# Task Graph vs Stream Execution Research for PTO-WSP v9
 
 ## Overview
 

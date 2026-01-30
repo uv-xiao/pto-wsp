@@ -24,7 +24,7 @@ clean:
 
 # Help
 help:
-	@echo "Tensor Data Example - PTO-RT v9"
+	@echo "Tensor Data Example - PTO-WSP v9"
 	@echo ""
 	@echo "Targets:"
 	@echo "  make run   - Execute the example"

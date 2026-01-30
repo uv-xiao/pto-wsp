@@ -1,11 +1,11 @@
-// Copyright 2026 PTO-RT Authors
+// Copyright 2026 PTO-WSP Authors
 // SPDX-License-Identifier: MIT
 
 #pragma once  // API-2 FIX: Consistent include guard style
 // (was: #ifndef PTO_WSP_GRAPH_GRAPH_HPP)
 
 /// @file graph.hpp
-/// @brief Unified header for PTO-RT task graph infrastructure.
+/// @brief Unified header for PTO-WSP task graph infrastructure.
 ///
 /// This header provides the shared infrastructure for all backends:
 /// - TaskNodePod: Device-copyable task descriptor
@@ -14,11 +14,11 @@
 /// - ReadyQueueSet: Multi-queue task scheduling
 /// - TaskGraphRuntime: Runtime execution state
 
-#include "pto/rt/graph/types.hpp"
-#include "pto/rt/graph/storage.hpp"
-#include "pto/rt/graph/tensor_map.hpp"
-#include "pto/rt/graph/ready_queue.hpp"
-#include "pto/rt/graph/runtime.hpp"
+#include "pto/wsp/graph/types.hpp"
+#include "pto/wsp/graph/storage.hpp"
+#include "pto/wsp/graph/tensor_map.hpp"
+#include "pto/wsp/graph/ready_queue.hpp"
+#include "pto/wsp/graph/runtime.hpp"
 
 #include <memory>  // INC-3 FIX: for std::unique_ptr, std::make_unique
 

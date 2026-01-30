@@ -1,4 +1,4 @@
-# PTO-RT v9 DeepSeek Lightning Indexer Example
+# PTO-WSP v9 DeepSeek Lightning Indexer Example
 # Makefile for running and testing the example
 
 PYTHON ?= python3

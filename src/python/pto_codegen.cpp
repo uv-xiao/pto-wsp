@@ -1,16 +1,16 @@
-// Copyright 2026 PTO-RT Authors
+// Copyright 2026 PTO-WSP Authors
 // SPDX-License-Identifier: MIT
 
 #include <pybind11/numpy.h>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 
-#include "pto/rt/codegen/cpp_builder.hpp"
-#include "pto/rt/codegen/cmake_compiler.hpp"
-#include "pto/rt/codegen/abi/workload_abi.hpp"
-#include "pto/rt/backend/backend.hpp"
-#include "pto/rt/ir/type_check.hpp"
-#include "pto/rt/ir/codegen.hpp"
+#include "pto/wsp/codegen/cpp_builder.hpp"
+#include "pto/wsp/codegen/cmake_compiler.hpp"
+#include "pto/wsp/codegen/abi/workload_abi.hpp"
+#include "pto/wsp/backend/backend.hpp"
+#include "pto/wsp/ir/type_check.hpp"
+#include "pto/wsp/ir/codegen.hpp"
 
 #include <algorithm>
 #include <cstdio>
@@ -474,8 +474,8 @@ std::string emit_kernel_cpp(const KernelPlan& kp) {
 
     cg::TranslationUnit tu;
     tu.includes = {
-        "\"pto/rt/codegen/abi/kernel_abi.hpp\"",
-        "\"pto/rt/codegen/abi/ptoisa_bridge.hpp\"",
+        "\"pto/wsp/codegen/abi/kernel_abi.hpp\"",
+        "\"pto/wsp/codegen/abi/ptoisa_bridge.hpp\"",
         "<cstdint>",
         "<cstddef>",
         "<memory>",
@@ -1261,8 +1261,8 @@ std::string emit_workload_cpp_from_ir(const pto::wsp::ir::Module& module) {
     const std::string entrypoint = module_name + "_main";
 
     std::ostringstream out;
-    out << "#include \"pto/rt/codegen/abi/workload_abi.hpp\"\n";
-    out << "#include \"pto/rt/codegen/abi/kernel_abi.hpp\"\n";
+    out << "#include \"pto/wsp/codegen/abi/workload_abi.hpp\"\n";
+    out << "#include \"pto/wsp/codegen/abi/kernel_abi.hpp\"\n";
     out << "#include <cstdint>\n";
     out << "#include <cstddef>\n\n";
 
@@ -1479,9 +1479,9 @@ std::string emit_workload_cpp_from_ir_ast(const pto::wsp::ir::Module& module) {
 
     cg::TranslationUnit tu;
     tu.includes = {
-        "\"pto/rt/codegen/abi/workload_abi.hpp\"",
-        "\"pto/rt/codegen/abi/kernel_abi.hpp\"",
-        "\"pto/rt/codegen/abi/task_context_abi.hpp\"",
+        "\"pto/wsp/codegen/abi/workload_abi.hpp\"",
+        "\"pto/wsp/codegen/abi/kernel_abi.hpp\"",
+        "\"pto/wsp/codegen/abi/task_context_abi.hpp\"",
         "<algorithm>",
         "<cstdint>",
         "<cstddef>",
@@ -2793,7 +2793,7 @@ std::string emit_aicpu_expand_cpp_from_ir(const pto::wsp::ir::Module& module) {
 
     cg::TranslationUnit tu;
     tu.includes = {
-        "\"pto/rt/codegen/abi/npu_plan_abi.hpp\"",
+        "\"pto/wsp/codegen/abi/npu_plan_abi.hpp\"",
         "<cstdint>",
         "<cstddef>",
     };
@@ -3235,8 +3235,8 @@ std::string emit_aicore_dispatch_cpp_from_ir(const pto::wsp::ir::Module& module)
 
     cg::TranslationUnit tu;
     tu.includes = {
-        "\"pto/rt/codegen/abi/npu_plan_abi.hpp\"",
-        "\"pto/rt/codegen/abi/kernel_abi.hpp\"",
+        "\"pto/wsp/codegen/abi/npu_plan_abi.hpp\"",
+        "\"pto/wsp/codegen/abi/kernel_abi.hpp\"",
         "<cstdint>",
         "<cstddef>",
     };
@@ -3297,8 +3297,8 @@ static std::string emit_custom_kernel_cpp(const pto::wsp::ir::CodegenKernelDef& 
 
     std::ostringstream out;
     out << "// Custom kernel (Path A): user-provided PTO-ISA tile code\n";
-    out << "#include \"pto/rt/codegen/abi/kernel_abi.hpp\"\n";
-    out << "#include \"pto/rt/codegen/abi/ptoisa_bridge.hpp\"\n";
+    out << "#include \"pto/wsp/codegen/abi/kernel_abi.hpp\"\n";
+    out << "#include \"pto/wsp/codegen/abi/ptoisa_bridge.hpp\"\n";
     out << "#include <cstdint>\n";
     out << "#include <cstddef>\n";
     for (const auto& inc : extra_includes) {
@@ -3373,7 +3373,7 @@ py::dict compile_codegen(const pto::wsp::ir::Module& module,
         // Host stub always builds without Ascend toolchain.
         {
             std::ostringstream hs;
-            hs << "#include \"pto/rt/codegen/abi/npu_plan_abi.hpp\"\n";
+            hs << "#include \"pto/wsp/codegen/abi/npu_plan_abi.hpp\"\n";
             hs << "extern \"C\" void pto_wsp_npu_host_stub(const NpuPlanDesc* plan) { (void)plan; }\n";
             sources.emplace("host/runner_stub.cpp", hs.str());
         }

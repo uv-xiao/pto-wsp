@@ -57,11 +57,11 @@ Distributed layouts are **closed under Triton shape operations** (transpose, res
 - Automatic layout selection for operation chains
 - Layout composition to eliminate data movement
 
-## Relevance to PTO-RT
+## Relevance to PTO-WSP
 
 ### Current Approach
 
-PTO-RT's `MemLayout` in `types.py` uses an enum-based approach:
+PTO-WSP's `MemLayout` in `types.py` uses an enum-based approach:
 ```python
 class MemLayout(Enum):
     RowMajor = "row_major"
@@ -85,13 +85,13 @@ For NPU kernel optimization, Linear Layout concepts could help with:
 
 1. **Scope**: Linear Layout targets GPU-specific operations (warp shuffle, shared memory banking). Ascend NPU has different primitives (data mover, cube unit).
 
-2. **Complexity vs. benefit**: For PTO-RT v9, enum-based layouts suffice. Linear Layout would be valuable for NPU kernel auto-tuning in future versions.
+2. **Complexity vs. benefit**: For PTO-WSP v9, enum-based layouts suffice. Linear Layout would be valuable for NPU kernel auto-tuning in future versions.
 
 3. **Type-level integration**: Could extend `TensorLayout` to include F₂ matrix representation alongside distribution info.
 
 ## Conclusion
 
-Linear Layout is a powerful formalism for GPU kernel optimization. For PTO-RT:
+Linear Layout is a powerful formalism for GPU kernel optimization. For PTO-WSP:
 
 - **v9**: Document awareness; enum-based layouts adequate
 - **Future**: Consider integration for NPU auto-tuning when targeting performance-critical kernels

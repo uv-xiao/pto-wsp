@@ -2,7 +2,7 @@
 // Copyright (c) 2024 PTO Project
 // SPDX-License-Identifier: MIT
 
-#include "pto/rt/ir/parser.hpp"
+#include "pto/wsp/ir/parser.hpp"
 #include <fstream>
 #include <sstream>
 #include <cctype>

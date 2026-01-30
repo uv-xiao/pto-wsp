@@ -1,6 +1,6 @@
-# PTO-RT Documentation
+# PTO-WSP Documentation
 
-This directory contains the main documentation set for PTO Workload-Schedule Programming (PTO-WSP) framework (PTO‑RT).
+This directory contains the main documentation set for PTO Workload-Schedule Programming (PTO-WSP) framework.
 
 ## Start here
 
@@ -17,6 +17,7 @@ This directory contains the main documentation set for PTO Workload-Schedule Pro
 - `docs/reference/` — external references and extracted notes
 - `docs/research/` — older working docs and explorations
 - `docs/archive/` — historical specs/analysis
+- `docs/future/` — forward-looking plans (v10+)
 
 ## Examples
 

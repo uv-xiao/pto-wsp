@@ -1,5 +1,5 @@
 """
-Codegen frontend helpers for PTO-RT v9.
+Codegen frontend helpers for PTO-WSP v9.
 
 The v9 contract is that compilation + codegen + artifact builds are owned by C++
 (via `pto_ir_cpp`). Python remains a frontend for workload/kernel construction

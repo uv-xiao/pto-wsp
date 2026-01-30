@@ -1,4 +1,4 @@
-# DAM (Dataflow Abstract Machine) Notes for PTO-RT v9 (CSPT)
+# DAM (Dataflow Abstract Machine) Notes for PTO-WSP v9 (CSPT)
 
 > Sources: `references/dam.pdf` and `references/DAM-RS/` (DAM-RS)
 >

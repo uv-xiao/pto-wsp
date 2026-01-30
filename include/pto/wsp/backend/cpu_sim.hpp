@@ -1,11 +1,11 @@
-// Copyright 2026 PTO-RT Authors
+// Copyright 2026 PTO-WSP Authors
 // SPDX-License-Identifier: MIT
 
 #pragma once  // API-2 FIX: Consistent include guard style
 // (was: #ifndef PTO_WSP_BACKEND_CPU_SIM_HPP)
 
-#include "pto/rt/backend/backend.hpp"
-#include "pto/rt/graph/graph.hpp"
+#include "pto/wsp/backend/backend.hpp"
+#include "pto/wsp/graph/graph.hpp"
 
 #include <thread>
 #include <atomic>

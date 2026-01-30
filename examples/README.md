@@ -1,6 +1,6 @@
-# PTO-RT Examples (v9, validated)
+# PTO-WSP Examples (v9, validated)
 
-These examples are **real-data validations** of PTO-RT v9’s **codegen-first** execution on the `cpu_sim` target.
+These examples are **real-data validations** of PTO-WSP v9’s **codegen-first** execution on the `cpu_sim` target.
 
 Each example:
 - computes a result with a **golden** (reference) implementation
@@ -33,9 +33,9 @@ Every validated example follows:
 ```
 examples/<name>/
   golden.py          # reference implementation
-  pto_wsp_impl.py     # PTO-RT implementation (builds/runs codegen artifacts)
+  pto_wsp_impl.py     # PTO-WSP implementation (builds/runs codegen artifacts)
   <name>_example.py  # runner: data prep, run, check, report
-  README.md          # explains how PTO-RT APIs construct the workload
+  README.md          # explains how PTO-WSP APIs construct the workload
 ```
 
 ## Example index

@@ -1,4 +1,4 @@
-# PTO-RT v9 Batched GEMM Example
+# PTO-WSP v9 Batched GEMM Example
 # Makefile for running and testing the example
 
 PYTHON ?= python3

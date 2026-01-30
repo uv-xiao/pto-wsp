@@ -836,7 +836,7 @@ builder.submit(tid);
 ### 6.7 Header Organization
 
 ```
-include/pto/rt/
+include/pto/wsp/
 ├── graph/
 │   ├── types.hpp         # ExecDomain, ExecPool, TaskNodePod, TensorRegion2D
 │   ├── storage.hpp       # TaskGraphStorage
@@ -873,7 +873,7 @@ include/pto/rt/
 ## 7. Implementation Phases
 
 ### Phase 5.1: Shared Infrastructure (R6)
-1. Implement `TaskNodePod`, `TaskGraphStorage` in `include/pto/rt/graph/`
+1. Implement `TaskNodePod`, `TaskGraphStorage` in `include/pto/wsp/graph/`
 2. Implement `TensorMap` (FixedTensorMap + DynamicTensorMap)
 3. Implement `ReadyQueueSet` (MPMC + optional SPSC)
 4. Implement window/gate/batcher utilities for extended primitives

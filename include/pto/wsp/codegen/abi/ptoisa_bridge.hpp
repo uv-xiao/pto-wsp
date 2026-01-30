@@ -1,9 +1,9 @@
-// Copyright 2026 PTO-RT Authors
+// Copyright 2026 PTO-WSP Authors
 // SPDX-License-Identifier: MIT
 
 #pragma once
 
-#include "pto/rt/codegen/abi/kernel_abi.hpp"
+#include "pto/wsp/codegen/abi/kernel_abi.hpp"
 
 // PTO-ISA entrypoint.
 //
@@ -43,7 +43,7 @@ enum class AccPhase : uint8_t { Unspecified = 0 };
 // This header intentionally does not prescribe a particular lowering strategy.
 // Kernel emitters may:
 // - Call PTO-ISA tile primitives directly, OR
-// - Use helper functions/macros provided by PTO-RT.
+// - Use helper functions/macros provided by PTO-WSP.
 //
 // As codegen matures, add wrappers here to model CSPT timing in a consistent way.
 

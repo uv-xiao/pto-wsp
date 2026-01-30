@@ -7,9 +7,9 @@
 
 #pragma once
 
-#include "pto/rt/backend/backend.hpp"
-#include "pto/rt/backend/codegen.hpp"
-#include "pto/rt/ir/npu.hpp"
+#include "pto/wsp/backend/backend.hpp"
+#include "pto/wsp/backend/codegen.hpp"
+#include "pto/wsp/ir/npu.hpp"
 
 #include <sstream>
 

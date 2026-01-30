@@ -1,7 +1,7 @@
 """
 Exception Hierarchy for PTO Workload-Schedule Programming (PTO-WSP) framework.
 
-This module defines the exception taxonomy for the PTO-RT system.
+This module defines the exception taxonomy for the PTO-WSP system.
 All exceptions inherit from PtoError for consistent error handling.
 
 Exception Hierarchy:
@@ -21,9 +21,9 @@ from __future__ import annotations
 
 
 class PtoError(Exception):
-    """Base exception for all PTO-RT errors.
+    """Base exception for all PTO-WSP errors.
 
-    All PTO-RT specific exceptions inherit from this class to allow
+    All PTO-WSP specific exceptions inherit from this class to allow
     for unified exception handling.
 
     Example:

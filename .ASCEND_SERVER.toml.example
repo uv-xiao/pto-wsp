@@ -1,0 +1,19 @@
+[ssh]
+# SSH config host name (from ~/.ssh/config). Example: `ssh siyuan`.
+host = "siyuan"
+
+# Remote workspace directory where PTO-WSP will be synced and executed.
+workspace = "/home/ntlab/uvxiao/pto-wsp-ws"
+
+[ascend]
+# Root of Ascend/CANN installation on the remote machine.
+root = "/home/ntlab/Ascend"
+
+# Optional: path to an env setup script to source before building/running.
+# If omitted, `scripts/ascend_remote.py` can still run commands, but you’ll need
+# to ensure your SSH environment already has CANN vars set.
+# env_script = "/home/ntlab/uvxiao/cann/cann/set_env.sh"
+
+[repo]
+# Directory name under `workspace` that will hold the synced repo.
+dir = "pto-wsp"

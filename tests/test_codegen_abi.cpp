@@ -1,8 +1,8 @@
 // Minimal compilation check for codegen ABIs.
 
-#include "pto/rt/codegen/abi/kernel_abi.hpp"
-#include "pto/rt/codegen/abi/workload_abi.hpp"
-#include "pto/rt/codegen/abi/ptoisa_bridge.hpp"
+#include "pto/wsp/codegen/abi/kernel_abi.hpp"
+#include "pto/wsp/codegen/abi/workload_abi.hpp"
+#include "pto/wsp/codegen/abi/ptoisa_bridge.hpp"
 
 static_assert(sizeof(KernelTaskDesc) > 0);
 static_assert(sizeof(RuntimeContext) > 0);
