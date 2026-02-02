@@ -2,18 +2,28 @@
 
 This file is a checklist tracker for executing `docs/future/v10_plan.md`.
 
+## Progress log
+
+- **2026-02-02:** started pto-runtime integration bootstrap (submodule + Phase 1 emit-only scaffold + docs + tests).
+  See `docs/plans/2026-02-02-pto-runtime-integration-v10.md`.
+
 ## W1) Backend/runtime architecture maturity
 
-- [ ] Decide PTO‑WSP ↔ pto-runtime integration shape (submodule vs external dependency) and document it
+- [x] Decide PTO‑WSP ↔ pto-runtime integration shape (submodule vs external dependency) and document it
+- [x] Add `pto-runtime` git submodule at `3rdparty/pto-runtime`
+- [x] Add pto-runtime Python import bridge (`python/pto_wsp/pto_runtime_bridge.py`)
+- [x] Add Phase 1 emit-only scaffold target `target="a2a3sim_codegen"` emitting pto-runtime `host_build_graph` sources
 - [ ] Define and document the v10 package/manifest format (ABI versioning, targets, binaries, metadata) consumable by pto-runtime
 - [ ] Define and document the v10 artifact/runtime ABI **aligned to pto-runtime** (tasks, deps, slots, policy hooks)
 - [ ] Define kernel registry ABI (`kernel_id` mapping; executor types; sim vs device payload formats)
 - [ ] Define slots/symbols ABI (stable IDs, widths, update protocol; tensor→slot materialization rules)
 - [ ] Define CSP channel ABI (IDs, capacity, latency model; wait/signal protocol for scheduler)
 - [ ] Define schedule-policy protocol (policy IDs, parameters, evaluation contract; no policy leakage into pto-runtime)
-- [ ] Phase 1 integration: make `cpu_sim` and `ascend_npu` runnable by generating a host orchestration `.so` for pto-runtime (a2a3sim/a2a3)
+- [ ] Phase 1 integration (runnable): make `cpu_sim` and `ascend_npu` runnable by generating a host orchestration `.so` for pto-runtime (a2a3sim/a2a3)
 - [ ] Phase 2 integration: implement AICPU-side expansion into bounded task-buffer (task_window backpressure + CSP edges) aligned to pto-runtime roadmap
 - [ ] Consolidate codegen build plumbing (deterministic artifact layout, logs, cache versioning policy)
+- [x] Make codegen cache writable in sandboxed environments (default to repo-local cache; still overridable via `PTO_WSP_CODEGEN_CACHE_DIR`)
+- [x] Add CMake option `PTO_RUNTIME_PATH` (default: `3rdparty/pto-runtime`)
 - [ ] Implement bounded runtime resources (“multi-ring” flow control): task ring, tensormap pool, deplist pool, heap/buffer arena, ready queues
 - [ ] Add flow-control stats + high-water marks (per bounded resource) and surface them via program stats/diagnostics
 - [ ] Add runtime deadlock/diagnostic hooks suitable for CSP (CPU-sim; actionable stall/channel reports)

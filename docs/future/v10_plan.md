@@ -3,6 +3,20 @@
 > **Status:** draft planning document (not yet scheduled)  
 > **Baseline:** v9.3 design / 0.1.0 implementation (“codegen-first” CPU-sim; NPU emit-only here)
 
+## Status update (2026-02-02)
+
+v10 execution has started with **pto-runtime integration bootstrap**:
+
+- Integration shape chosen: **Option A (git submodule)** at `3rdparty/pto-runtime`
+- Phase 1 scaffolding started:
+  - emit-only codegen target `target="a2a3sim_codegen"` that emits a pto-runtime `host_build_graph`-shaped source tree
+  - Python import bridge for pto-runtime tooling (`python/pto_wsp/pto_runtime_bridge.py`)
+- Build plumbing updated:
+  - repo-local default codegen cache (`build/.pto_wsp_codegen_cache`) to avoid `$HOME` writes in sandboxed environments
+  - CMake option `PTO_RUNTIME_PATH` (default submodule path)
+
+Near-term execution plan is tracked in: `docs/plans/2026-02-02-pto-runtime-integration-v10.md`.
+
 v10 focuses on turning PTO‑WSP into a **mature multi-backend workload+schedule compiler** while **hardening and completing** the v9
 headline features (CSP + dispatch/task_window-based scheduling). Concretely, v10 targets:
 
