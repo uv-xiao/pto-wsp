@@ -18,6 +18,9 @@ if a feature is missing, PTO‑WSP must treat it as **recorded/diagnosed** (or �
 **Gap:**
 - First-class “AICPU shard / scheduler id” on tasks and a deterministic policy hook to compute it.
 - Validation tooling to prove the mapping is enforced (not just serialized).
+- PTO‑WSP placeholders (current scaffold):
+  - generated orchestration contains `TODO_PTO_RUNTIME_MULTI_AICPU_DISPATCH` in `kernels/orchestration/pto_wsp_orch.cpp`
+  - emitter entrypoint: `pto::wsp::codegen::pto_runtime::emit_host_build_graph_sources` (`include/pto/wsp/codegen/pto_runtime_host_build_graph.hpp`)
 
 ## 2) CSP requires auto-generated orchestrator/scheduler logic
 
@@ -82,4 +85,3 @@ works both with the submodule layout and external installs.
 **Gap:**
 - A supported import story (package vs path-based modules), version compatibility checks, and clear error messages when
   toolchains are missing.
-
