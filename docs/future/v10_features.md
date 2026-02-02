@@ -90,6 +90,7 @@ This document is an at-a-glance catalog for v10. For rationale see `docs/future/
 Bootstrap status (as of 2026-02-02):
 - emit-only scaffold target exists: `target="a2a3sim_codegen"` (emits pto-runtime `host_build_graph`-shaped sources)
 - runnable `pto_runtime_a2a3sim` / `pto_runtime_a2a3` execution path is TODO (see `docs/future/v10_tracker.md`)
+  - the intended behavior is: emit visible source tree → PTO‑WSP wraps pto-runtime tooling to compile+run
 
 ## D) Tooling and quality (Should)
 

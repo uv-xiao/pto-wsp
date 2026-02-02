@@ -10,6 +10,8 @@
 
 - If an API is described as “implemented”, its semantics are implemented in the **generated artifact**, not in Python fallback code.
 - Python may build IR and launch artifacts, but must not become the execution engine for v10.
+- For `pto_runtime_*` targets, Python is allowed to invoke **pto-runtime tooling** (builder/compiler) as part of compile/run,
+  but it must not “simulate” schedule/CSP semantics on the host.
 
 ### 1.2 Canonical time
 
@@ -231,7 +233,8 @@ For v10, the `pto_runtime_*` targets are implemented by targeting the decoupled 
 
 Normative contract:
 
-- PTO‑WSP must emit a **versioned package** consumable by `pto-runtime`.
+- Phase 1: PTO‑WSP must emit a **visible source tree artifact** (host_build_graph-shaped) and wrap pto-runtime tooling to build+run it.
+- Phase 2: PTO‑WSP must emit a **versioned package** consumable by `pto-runtime`.
 - The package must be executable on:
   - `a2a3sim` (local semantics testing), and
   - `a2a3` (real device).

@@ -11,6 +11,9 @@ v10 execution has started with **pto-runtime integration bootstrap**:
 - Phase 1 scaffolding started:
   - emit-only codegen target `target="a2a3sim_codegen"` that emits a pto-runtime `host_build_graph`-shaped source tree
   - Python import bridge for pto-runtime tooling (`python/pto_wsp/pto_runtime_bridge.py`)
+- Phase 1 definition clarified:
+  - the **source tree is the canonical visible artifact**
+  - PTO‑WSP should wrap pto-runtime tooling to compile+run after emitting (not a manual step)
 - Build plumbing updated:
   - repo-local default codegen cache (`build/.pto_wsp_codegen_cache`) to avoid `$HOME` writes in sandboxed environments
   - CMake option `PTO_RUNTIME_PATH` (default submodule path)

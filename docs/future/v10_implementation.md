@@ -14,9 +14,14 @@ This document outlines *how* we can evolve the current codebase to meet v10 goal
 
 **What is next (todo):**
 - make Phase 1 runnable:
-  - compile orchestration `.so` + kernels via pto-runtime tooling (`RuntimeBuilder(platform="a2a3sim")`)
-  - add a PTO‑WSP runner path that launches pto-runtime instead of `dlopen` / emit-only
-- define the v10 package/manifest + ABI and keep it aligned with pto-runtime
+  - keep the **source tree** as a visible artifact (the canonical Phase 1 output)
+  - wrap pto-runtime tooling from PTO‑WSP Python to compile+run:
+    - `RuntimeBuilder(platform="a2a3sim")` for local runs
+    - `RuntimeBuilder(platform="a2a3")` for real device runs (toolchain-gated)
+  - add PTO‑WSP targets that *use* pto-runtime for execution (not emit-only):
+    - `target="pto_runtime_a2a3sim"`
+    - `target="pto_runtime_a2a3"`
+- define the v10 manifest/ABI as needed for Phase 2 (task-buffer) and long-term portability
 - map `dispatch(policy)` to multi-AICPU scheduling semantics (currently a documented gap)
 - implement CSP channel semantics + diagnostics on the pto-runtime path (Phase 2 target)
 
@@ -28,11 +33,11 @@ PTO‑WSP Python
   v
 PTO‑WSP C++ codegen
   |  DONE: emits host_build_graph sources (a2a3sim_codegen)
-  |  TODO: emits runnable package + orchestration .so (Phase 1 runnable)
+  |  TODO: emits host_build_graph sources + metadata (visible artifact)
   v
 pto-runtime tooling (Python)
   |  DONE: import bridge exists
-  |  TODO: build+run generated tree for a2a3sim / a2a3
+  |  TODO: PTO‑WSP wraps builder/compiler to build+run for a2a3sim / a2a3
   v
 pto-runtime runtime (a2a3sim / a2a3)
 ```

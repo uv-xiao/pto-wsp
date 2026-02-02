@@ -54,52 +54,40 @@ provided by PTO‑WSP artifacts.
 
 For PTO‑WSP, “integrate with pto-runtime” means:
 
-- PTO‑WSP emits a **package** (binaries + metadata)
-- pto-runtime executes it on:
-  - **`a2a3sim`** for local semantics testing
-  - **`a2a3`** for real Ascend devices
+- PTO‑WSP codegen emits a **visible artifact** (Phase 1: a pto-runtime-shaped source tree) plus metadata.
+- PTO‑WSP Python wraps **pto-runtime tooling** to compile and run the emitted artifact on:
+  - **`a2a3sim`** for local semantics testing, and
+  - **`a2a3`** for real Ascend devices.
 
 No “emit-only” backend is acceptable for v10 completeness; `emit-only` is allowed only as a degraded experience when toolchains
 are absent locally.
 
-## 3) Artifact package shape (v10 contract)
+## 3) Artifact contract (Phase 1 source tree; Phase 2 package)
 
-PTO‑WSP v10 should define a stable “package” layout that pto-runtime can consume.
+### 3.1 Phase 1 (host_build_graph): source tree artifact (canonical)
 
-Minimum contents:
+Phase 1’s canonical artifact is a **source tree** shaped like pto-runtime examples:
 
-0) **Manifest**
-   - machine-readable manifest (`.json`/`.toml`) describing:
-     - `wsp_runtime_abi` (string)
-     - `target` (`a2a3` / `a2a3sim` / future)
-     - kernel registry entries
-     - schedule/CSP payload locations
-     - slot/symbol schema
-     - entry payload type (Phase 1 `.so` vs Phase 2 expander payload)
+- `kernels/orchestration/*.cpp` — orchestration function (host builds graph via `Runtime`)
+- `kernels/*/*.cpp` — kernel sources by executor type (AIV/AIC, etc.)
+- `kernels/kernel_config.py` — orchestration symbol + kernel list (`func_id`, `core_type`)
 
-1) **Kernel registry payload**
-   - mapping `kernel_id → binary` per executor type (AIC/AIV, possibly DMA later)
-   - for `a2a3sim`, binaries are host-executable `.text` blobs or `.so` + symbol name (choose one and standardize)
-   - for `a2a3`, binaries are the device-compatible kernel images expected by pto-runtime
+PTO‑WSP must keep this tree **visible** (reviewable) as the primary artifact, even if pto-runtime caches compiled outputs
+elsewhere.
 
-2) **Schedule/runtime payload**
-   - policy IDs and parameters (dispatch policy, etc.)
-   - task_window config (size, overflow=STALL, unit=tasks)
-    - CSP channel definitions (IDs, capacity, latency model)
-   - slot/symbol table schema (IDs, widths, pointer vs u64)
+Phase 1 may additionally write a small manifest (optional) to locate build outputs and record “enforced vs recorded” status,
+but Phase 1 correctness must not depend on hidden host-side behavior.
 
-3) **Entry payload**
-   - either:
-     - a host orchestration `.so` (Phase 1), or
-     - an AICPU expander/scheduler payload consuming a compact plan (Phase 2)
+### 3.2 Phase 2 (task-buffer): versioned package (target)
 
-The package must carry an explicit ABI version, e.g. `wsp_runtime_abi = "v10.0"`.
+Phase 2 requires a versioned ABI/package aligned to pto-runtime’s task-buffer direction (compact plan + expander payload +
+slots/symbol schema + CSP channel ABI). This is the v10 target for true `task_window` backpressure and CSP completeness.
 
-### 3.1 ABI versioning and compatibility rules (required)
+### 3.3 ABI versioning and compatibility rules (required)
 
 v10 requires explicit compatibility rules:
 
-- A package with unknown `wsp_runtime_abi` must fail fast with a clear error.
+- A Phase 2 package with unknown `wsp_runtime_abi` must fail fast with a clear error.
 - v10 may allow “minor” additions (extra optional fields) while keeping “major” incompatible schema changes gated by a new ABI string.
 - Slots/symbol IDs must be stable across rebuilds (hash-based IDs preferred) so “update between runs” remains valid.
 
@@ -111,10 +99,8 @@ To keep v10 realistic but correct, we explicitly define phases.
 ### Phase 1 (compatibility; runnable backend fast)
 
 Mechanism:
-- PTO‑WSP generates a **host orchestration `.so`** that:
-  - allocates tensors via pto-runtime host APIs,
-  - builds a static task graph via pto-runtime’s `Runtime` object (add_task/add_successor style),
-  - configures per-task placement (`core_type` / executor id).
+- PTO‑WSP emits a pto-runtime-shaped **source tree artifact** (host_build_graph).
+- PTO‑WSP Python invokes pto-runtime tooling to build the orchestration `.so` and the platform runtime binaries, then runs it.
 
 Pros:
 - gets a runnable Ascend backend quickly via existing pto-runtime APIs

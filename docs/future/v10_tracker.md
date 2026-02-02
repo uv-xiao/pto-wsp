@@ -19,7 +19,9 @@ This file is a checklist tracker for executing `docs/future/v10_plan.md`.
 - [ ] Define slots/symbols ABI (stable IDs, widths, update protocol; tensor→slot materialization rules)
 - [ ] Define CSP channel ABI (IDs, capacity, latency model; wait/signal protocol for scheduler)
 - [ ] Define schedule-policy protocol (policy IDs, parameters, evaluation contract; no policy leakage into pto-runtime)
-- [ ] Phase 1 integration (runnable): make `cpu_sim` and `ascend_npu` runnable by generating a host orchestration `.so` for pto-runtime (a2a3sim/a2a3)
+- [ ] Phase 1 integration (runnable): add `pto_runtime_a2a3sim` and `pto_runtime_a2a3` targets that:
+  - emit a visible `host_build_graph` source tree artifact, and
+  - wrap pto-runtime tooling to compile+run it (a2a3sim/a2a3)
 - [ ] Phase 2 integration: implement AICPU-side expansion into bounded task-buffer (task_window backpressure + CSP edges) aligned to pto-runtime roadmap
 - [ ] Consolidate codegen build plumbing (deterministic artifact layout, logs, cache versioning policy)
 - [x] Make codegen cache writable in sandboxed environments (default to repo-local cache; still overridable via `PTO_WSP_CODEGEN_CACHE_DIR`)

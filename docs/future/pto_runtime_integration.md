@@ -94,8 +94,11 @@ Concretely, PTO‑WSP C++ codegen should emit a tree shaped like pto-runtime exa
 
 At the Python level, PTO‑WSP should **import pto-runtime tooling** (from the submodule, via a small bridge helper) to:
 
-- build host runtime + AICPU + AICore binaries for `platform="a2a3sim"` locally, and
-- build the real-device binaries for `platform="a2a3"` in proper CANN environments.
+- build host runtime + AICPU + AICore binaries and run for `platform="a2a3sim"` locally, and
+- build the real-device binaries and run for `platform="a2a3"` in proper CANN environments.
+
+PTO‑WSP should wrap this as part of its own “compile + run” flow for `pto_runtime_*` targets, while still keeping the emitted
+source tree as the primary visible artifact (reviewable output).
 
 **Non-negotiable:** schedule/CSP semantics must not be implemented by Python “driving” execution. Python may build IR,
 invoke compilation, and launch runtime; semantics must live in artifacts/runtime logic.

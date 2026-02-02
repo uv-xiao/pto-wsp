@@ -87,6 +87,9 @@ v10 should explicitly model **three** backend families:
      - `pto_runtime_a2a3sim`: host-thread simulation (AICPU/AICore semantics on host threads)
      - `pto_runtime_a2a3`: real Ascend device execution (toolchain-gated)
    - This is where we validate “realistic” scheduling semantics (AICPU scheduler + worker handshake), not just a host threadpool.
+   - Phase 1 integration rule:
+     - emitted `host_build_graph` source trees remain **visible artifacts**, and
+     - PTO‑WSP wraps pto-runtime tooling to compile+run them; Python must not implement schedule/CSP semantics itself.
 
 3) **AIE target (`aie`)**
    - A dataflow/stream-driven accelerator backend (toolchain-gated; emit-only fallback allowed locally).
