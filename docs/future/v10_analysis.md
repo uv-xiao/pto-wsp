@@ -74,6 +74,26 @@ Concrete reference entrypoints:
 - `references/pto-runtime/src/runtime/host_build_graph/runtime/runtime.h` (current task data model + handshake)
 - `references/pto-runtime/python/runtime_builder.py` (build workflow across platforms)
 
+## 2.2 Backend/target model (v10 direction)
+
+v10 should explicitly model **three** backend families:
+
+1) **Native CPU simulation (`cpu_sim`)**
+   - A fast local backend for iteration and correctness checking.
+   - Remains runnable without external runtimes/toolchains.
+
+2) **pto-runtime targets (`pto_runtime_*`)**
+   - A codegen target family that produces artifacts consumable by pto-runtime:
+     - `pto_runtime_a2a3sim`: host-thread simulation (AICPU/AICore semantics on host threads)
+     - `pto_runtime_a2a3`: real Ascend device execution (toolchain-gated)
+   - This is where we validate “realistic” scheduling semantics (AICPU scheduler + worker handshake), not just a host threadpool.
+
+3) **AIE target (`aie`)**
+   - A dataflow/stream-driven accelerator backend (toolchain-gated; emit-only fallback allowed locally).
+
+The key v10 maturity goal is to keep **one semantic model** (CSP + dispatch + task_window + predicates) across all targets,
+while allowing target-specific lowering/mapping choices.
+
 ## 3. CSP across backends: what must remain invariant
 
 v10 CSP is a *semantic contract*:

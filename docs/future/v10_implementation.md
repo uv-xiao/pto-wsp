@@ -2,6 +2,41 @@
 
 This document outlines *how* we can evolve the current codebase to meet v10 goals.
 
+## Progress snapshot (2026-02-02)
+
+**What exists now (done):**
+- `pto-runtime` submodule at `3rdparty/pto-runtime`
+- pto-runtime Python import bridge: `python/pto_wsp/pto_runtime_bridge.py`
+- Phase 1 emit-only scaffold: `target="a2a3sim_codegen"` emits a pto-runtime `host_build_graph` source tree
+  - emitter entrypoint: `include/pto/wsp/codegen/pto_runtime_host_build_graph.hpp`
+- sandbox-safe codegen cache default: `build/.pto_wsp_codegen_cache` (override via `PTO_WSP_CODEGEN_CACHE_DIR`)
+- CMake option `PTO_RUNTIME_PATH` (default: `3rdparty/pto-runtime`)
+
+**What is next (todo):**
+- make Phase 1 runnable:
+  - compile orchestration `.so` + kernels via pto-runtime tooling (`RuntimeBuilder(platform="a2a3sim")`)
+  - add a PTO‑WSP runner path that launches pto-runtime instead of `dlopen` / emit-only
+- define the v10 package/manifest + ABI and keep it aligned with pto-runtime
+- map `dispatch(policy)` to multi-AICPU scheduling semantics (currently a documented gap)
+- implement CSP channel semantics + diagnostics on the pto-runtime path (Phase 2 target)
+
+**Diagram (done → next):**
+
+```
+PTO‑WSP Python
+  |  (build IR, choose target)
+  v
+PTO‑WSP C++ codegen
+  |  DONE: emits host_build_graph sources (a2a3sim_codegen)
+  |  TODO: emits runnable package + orchestration .so (Phase 1 runnable)
+  v
+pto-runtime tooling (Python)
+  |  DONE: import bridge exists
+  |  TODO: build+run generated tree for a2a3sim / a2a3
+  v
+pto-runtime runtime (a2a3sim / a2a3)
+```
+
 ## 0. Interface checkpoint (gating doc)
 
 For v10, “implementing backends” is inseparable from defining a clean, versioned boundary with `pto-runtime`. Treat the

@@ -82,9 +82,14 @@ This document is an at-a-glance catalog for v10. For rationale see `docs/future/
 
 ### C3) Backend targets (Must)
 
-- `cpu_sim`: implemented via `pto-runtime` `a2a3sim` (host-thread simulation of AICPU/AICore)
-- `ascend_npu`: runnable in CANN environment (not emit-only), via `pto-runtime` `a2a3`
+- `cpu_sim`: **native** local CPU simulation backend (fast iteration; runnable without external runtime/toolchains)
+- `pto_runtime_a2a3sim`: pto-runtime simulation backend (AICPU/AICore semantics on host threads)
+- `pto_runtime_a2a3`: pto-runtime Ascend backend (real device execution; toolchain-gated)
 - `aie`: runnable in AIE environment (hardware/emulator; emit-only fallback allowed locally)
+
+Bootstrap status (as of 2026-02-02):
+- emit-only scaffold target exists: `target="a2a3sim_codegen"` (emits pto-runtime `host_build_graph`-shaped sources)
+- runnable `pto_runtime_a2a3sim` / `pto_runtime_a2a3` execution path is TODO (see `docs/future/v10_tracker.md`)
 
 ## D) Tooling and quality (Should)
 

@@ -201,15 +201,21 @@ Each backend must expose:
 
 - runnable and validated locally
 - serves as the reference correctness backend
-- implemented by targeting `pto-runtime` **`a2a3sim`** so we exercise AICPU/AICore scheduling semantics on host threads
+- implemented as a **native** CPU-sim backend for fast iteration (no external runtime/toolchain dependency)
 
-### 6.2 ascend_npu
+### 6.2 pto_runtime_a2a3sim
+
+- runnable locally without Ascend toolchains
+- must preserve v10 CSP + dispatch semantics
+- implemented by targeting `pto-runtime` **`a2a3sim`** (host runtime + simulated AICPU scheduler + simulated AICore workers)
+
+### 6.3 pto_runtime_a2a3
 
 - runnable in a proper Ascend/CANN environment
 - must preserve v10 CSP + dispatch semantics
 - implemented by targeting `pto-runtime` **`a2a3`** (host runtime + AICPU scheduler + AICore kernels)
 
-### 6.3 aie
+### 6.4 aie
 
 - runnable in an AIE-capable environment (hardware/emulator)
 - must preserve v10 CSP + dispatch semantics
@@ -221,7 +227,7 @@ Each backend must expose:
 
 ## 7. pto-runtime integration contract (Ascend + cpu_sim)
 
-For v10, “cpu_sim” and “ascend_npu” are implemented by targeting the decoupled `pto-runtime` project.
+For v10, the `pto_runtime_*` targets are implemented by targeting the decoupled `pto-runtime` project.
 
 Normative contract:
 
