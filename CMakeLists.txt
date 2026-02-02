@@ -23,6 +23,17 @@ else()
     message(WARNING "pto-isa not found at: ${PTO_ISA_PATH}")
 endif()
 
+# pto-runtime dependency (default: git submodule in 3rdparty/)
+if(NOT DEFINED PTO_RUNTIME_PATH)
+    set(PTO_RUNTIME_PATH "${CMAKE_SOURCE_DIR}/3rdparty/pto-runtime" CACHE PATH "Path to pto-runtime")
+endif()
+
+if(EXISTS "${PTO_RUNTIME_PATH}/src")
+    message(STATUS "Found pto-runtime at: ${PTO_RUNTIME_PATH}")
+else()
+    message(WARNING "pto-runtime not found at: ${PTO_RUNTIME_PATH} (run `git submodule update --init --recursive`)")
+endif()
+
 # Include directories
 include_directories(
     ${CMAKE_SOURCE_DIR}/include
@@ -66,6 +77,7 @@ if(PTO_WSP_SOURCES)
     target_compile_definitions(pto-wsp-ir PUBLIC
         PTO_WSP_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
         PTO_ISA_PATH="${PTO_ISA_PATH}"
+        PTO_RUNTIME_PATH="${PTO_RUNTIME_PATH}"
     )
     # Enable PIC for use with Python bindings
     set_property(TARGET pto-wsp-ir PROPERTY POSITION_INDEPENDENT_CODE ON)
