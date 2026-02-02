@@ -1,6 +1,6 @@
-# PTO‑RT v10: Analysis (draft)
+# PTO‑WSP v10: Analysis (draft)
 
-> **Goal:** clarify *why* v10 exists and what architectural shifts are necessary (without rewriting PTO‑RT into another project).
+> **Goal:** clarify *why* v10 exists and what architectural shifts are necessary (without rewriting PTO‑WSP into another project).
 
 ## 1. v9 recap: what works and what doesn’t
 
@@ -17,7 +17,7 @@ v10 is not about inventing CSP or schedule; it’s about:
 2) making NPU backends **fully runnable** (in appropriate toolchain environments), and  
 3) introducing a first-class **NPU architecture model** so “Ascend vs AIE vs future NPU” does not imply “fork the compiler”.
 
-## 2. Backend maturity: what “mature” means for PTO‑RT
+## 2. Backend maturity: what “mature” means for PTO‑WSP
 
 When we say “mature backend” in v10, we mean:
 
@@ -27,23 +27,25 @@ When we say “mature backend” in v10, we mean:
 4) **Deterministic semantics**: “semantic time” is the artifact’s cycle model, not host wall-clock, and should be replayable.
 5) **Backend-independent runtime core**: scheduling and CSP machinery should not be reimplemented per backend.
 
-### 2.1 Reference: pto-isa-lh runtime patterns to learn from
+### 2.1 Reference: pto-runtime as the target backend runtime
 
-We should treat pto-isa-lh as a reference for runtime *mechanisms*, not as a frontend model to copy.
+We should treat the decoupled `pto-runtime` project as the primary reference **and target** for backend runtime
+architecture, rather than building a parallel bespoke runtime core inside PTO‑WSP.
 
-Key runtime patterns that map directly to PTO‑RT v10 needs:
+Key runtime patterns that map directly to PTO‑WSP v10 needs:
 
-- **Task window / ring-buffer flow control**: avoid “build all tasks then run”; enforce a bounded in-flight window with stall/backpressure.
-- **TensorMap dependency inference with bounded pools**: keep dependency tracking bounded and fast with lazy invalidation.
-- **Multi-threaded separation of concerns**: orchestrator thread building tasks while scheduler/workers execute, enabling memory reuse.
-- **Deadlock detection + diagnostics**: when window sizing or consumer accounting deadlocks progress, fail with a detailed message and guidance.
+- **3-program split (host runtime + AICPU scheduler + AICore kernels)** with a stable C/Python binding layer.
+- **Real device + simulation parity** via platform abstraction:
+  - `a2a3` (Ascend hardware, toolchain-gated)
+  - `a2a3sim` (host-thread simulation, no toolchain)
+- **Task-buffer direction (preview)**: bounded runtime resources + backpressure + diagnostics (see below).
 
 These patterns are highly relevant because CSP introduces additional blocking edges that must coexist with task-window backpressure.
 
 #### 2.1.1 “Five rings” as an explicit v10 design target
 
-pto-isa-lh’s flow-control design is not “just a task window”; it is a coordinated set of bounded resources that all provide
-backpressure (stall) to orchestration when exhausted. The important conceptual shape is:
+The pto-runtime “task-buffer” direction is not “just a task window”; it is a coordinated set of bounded resources that all provide
+backpressure (stall) to orchestration/scheduling when exhausted. The important conceptual shape is:
 
 1) **Task ring** (task metadata window)  
 2) **TensorMap pool** (dependency inference state)  
@@ -56,9 +58,9 @@ Alongside this, there are two essential requirements for maturity:
 - **Flow-control stats** (stall counts, stall time, high-water marks) for tuning and regression detection.
 - **Deadlock diagnostics** that are actionable when bounded resources + blocking semantics stop progress.
 
-PTO‑RT v10 should treat these as first-class runtime concepts (even if sizing differs per backend).
+PTO‑WSP v10 should treat these as first-class runtime concepts (even if sizing differs per backend).
 
-Two concrete implementation details from pto-isa-lh’s `runtime2` that are worth copying as *mechanisms*:
+Two concrete implementation details to preserve in the pto-runtime-aligned design:
 
 - **Orchestrator-side scopes affect liveness**: task outputs are held live by “scope references” until `scope_end()` decrements
   fanout refcounts; if `task_window` is too small for the active scope, the orchestrator can deadlock itself (it cannot reach
@@ -66,10 +68,11 @@ Two concrete implementation details from pto-isa-lh’s `runtime2` that are wort
 - **Stall reasons are explicit and measurable**: stall is not a vague “backpressure”; it has explicit reasons (task ring /
   tensormap pool / deplist pool / heap ring / ready queue), plus counters, time, and high-water marks for diagnosis and tuning.
 
-Concrete reference entrypoints in `references/pto-isa-lh/`:
-- `references/pto-isa-lh/docs/runtime_buffer_manager_methods.md` (flow control, ring buffers, deadlock diagnostics, runtime2 discussion)
-- `references/pto-isa-lh/src/runtime/pto_runtime_common.h` (TensorMap, fanin/fanout, ready queues, stall statistics)
-- `references/pto-isa-lh/src/runtime2/` (threaded scheduler/worker/orchestrator split; task window sizing)
+Concrete reference entrypoints:
+- `references/pto-runtime/README.md` (3-program architecture; a2a3 vs a2a3sim)
+- `docs/future/pto-runtime-task-buffer.md` (preview/reference: task-buffer direction)
+- `references/pto-runtime/src/runtime/host_build_graph/runtime/runtime.h` (current task data model + handshake)
+- `references/pto-runtime/python/runtime_builder.py` (build workflow across platforms)
 
 ## 3. CSP across backends: what must remain invariant
 
@@ -133,7 +136,7 @@ Concrete reference entrypoints in `references/allo/`:
 - `references/allo/allo/backend/aie/__init__.py` (AIE toolchain integration, build+run wrapper)
 - `references/allo/docs/source/backends/aie/` (environment, usage, profiling/trace notes)
 
-For PTO‑RT v10, the takeaway is:
+For PTO‑WSP v10, the takeaway is:
 
 - treat AIE as a **dataflow accelerator** where streams are first-class
 - keep CSP semantics stable across backends, while allowing per-arch mapping strategies

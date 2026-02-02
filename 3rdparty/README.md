@@ -33,3 +33,29 @@ To use a different pto-isa location:
 ```bash
 cmake -B build -DPTO_ISA_PATH=/path/to/pto-isa
 ```
+
+## pto-runtime
+
+Decoupled runtime substrate for Ascend (`a2a3`) and host simulation (`a2a3sim`).
+
+**Repository:** https://github.com/uv-xiao/pto-runtime
+
+### Setup
+
+pto-runtime is included as a git submodule:
+
+```bash
+git submodule update --init --recursive
+```
+
+### Updating
+
+To update to the latest pto-runtime:
+
+```bash
+cd 3rdparty/pto-runtime
+git pull origin main
+cd ../..
+git add 3rdparty/pto-runtime
+git commit -m "Update pto-runtime submodule"
+```

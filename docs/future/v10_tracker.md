@@ -1,10 +1,18 @@
-# PTO‑RT v10 Tracker (draft)
+# PTO‑WSP v10 Tracker (draft)
 
 This file is a checklist tracker for executing `docs/future/v10_plan.md`.
 
 ## W1) Backend/runtime architecture maturity
 
-- [ ] Define and document the v10 artifact runtime ABI (tasks, deps, slots, policy hooks)
+- [ ] Decide PTO‑WSP ↔ pto-runtime integration shape (submodule vs external dependency) and document it
+- [ ] Define and document the v10 package/manifest format (ABI versioning, targets, binaries, metadata) consumable by pto-runtime
+- [ ] Define and document the v10 artifact/runtime ABI **aligned to pto-runtime** (tasks, deps, slots, policy hooks)
+- [ ] Define kernel registry ABI (`kernel_id` mapping; executor types; sim vs device payload formats)
+- [ ] Define slots/symbols ABI (stable IDs, widths, update protocol; tensor→slot materialization rules)
+- [ ] Define CSP channel ABI (IDs, capacity, latency model; wait/signal protocol for scheduler)
+- [ ] Define schedule-policy protocol (policy IDs, parameters, evaluation contract; no policy leakage into pto-runtime)
+- [ ] Phase 1 integration: make `cpu_sim` and `ascend_npu` runnable by generating a host orchestration `.so` for pto-runtime (a2a3sim/a2a3)
+- [ ] Phase 2 integration: implement AICPU-side expansion into bounded task-buffer (task_window backpressure + CSP edges) aligned to pto-runtime roadmap
 - [ ] Consolidate codegen build plumbing (deterministic artifact layout, logs, cache versioning policy)
 - [ ] Implement bounded runtime resources (“multi-ring” flow control): task ring, tensormap pool, deplist pool, heap/buffer arena, ready queues
 - [ ] Add flow-control stats + high-water marks (per bounded resource) and surface them via program stats/diagnostics
@@ -18,7 +26,7 @@ This file is a checklist tracker for executing `docs/future/v10_plan.md`.
 - [ ] Implement logical channel capacity semantics (token-based; default capacity=1) and enforce it consistently in runtime/codegen
 - [ ] Implement constant channel latency model (default 0 cycles; stall-only)
 - [ ] Add CSP deadlock tests + diagnostics (bounded resources)
-- [ ] Make CSP runnable on Ascend backend in CANN environment (no emit-only limitation in v10)
+- [ ] Make CSP runnable on Ascend backend in CANN environment (no emit-only limitation in v10), via pto-runtime `a2a3`
 - [ ] Make CSP runnable on AIE backend in AIE environment (hardware/emulator)
 
 ## W3) Programmable dispatch/issue policies
@@ -40,7 +48,7 @@ This file is a checklist tracker for executing `docs/future/v10_plan.md`.
 - [ ] Define `target="aie"` artifact format (task graph + streams + layouts)
 - [ ] Implement AIE backend preserving dispatch + task_window + stream semantics (runnable in AIE env; emit-only fallback acceptable)
 - [ ] Add compile-time stream-graph validation (DAG required for v10 runnable path; reject cyclic graphs explicitly)
-- [ ] Add doc: PTO‑RT IR ↔ Dato-like model mapping and v10 support matrix
+- [ ] Add doc: PTO‑WSP IR ↔ Dato-like model mapping and v10 support matrix
 
 ## W6) Multi-NPU architecture representation
 
@@ -53,6 +61,6 @@ This file is a checklist tracker for executing `docs/future/v10_plan.md`.
 
 - [ ] Ensure all examples remain self-validating (golden + runner + cycle tolerance)
 - [ ] Add at least one CSP example and ensure it validates on CPU-sim
-- [ ] Add a backend validation suite runnable on Ascend/CANN (correctness + cycles + CSP)
+- [ ] Add a backend validation suite runnable on Ascend/CANN (correctness + cycles + CSP) via pto-runtime `a2a3`
 - [ ] Add a remote Ascend device testing harness driven by `.ASCEND_SERVER.toml` (ssh+rsync, build/run commands)
 - [ ] Add a backend validation suite runnable on AIE (correctness + cycles + CSP)

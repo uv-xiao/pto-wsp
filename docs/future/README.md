@@ -8,3 +8,7 @@ This folder contains forward-looking design/implementation plans beyond v9.
 - `docs/future/v10_implementation.md` — v10 implementation plan (HOW)
 - `docs/future/v10_plan.md` — v10 goals, workstreams, milestones
 - `docs/future/v10_tracker.md` — checklist tracker for v10 execution
+- `docs/future/pto_runtime_analysis.md` — notes on the decoupled `pto-runtime` target runtime
+- `docs/future/pto_runtime_integration.md` — how PTO‑WSP should integrate with `pto-runtime` (v10 direction)
+- `docs/future/v10_pto_runtime_interface.md` — interface contract / hazards checkpoint for PTO‑WSP ↔ pto-runtime
+- `docs/future/pto-runtime-task-buffer.md` — preview/reference: task-buffer direction for pto-runtime backend maturity

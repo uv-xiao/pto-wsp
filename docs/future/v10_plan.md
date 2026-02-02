@@ -1,17 +1,17 @@
-# PTO‑RT v10 Plan (draft)
+# PTO‑WSP v10 Plan (draft)
 
 > **Status:** draft planning document (not yet scheduled)  
 > **Baseline:** v9.3 design / 0.1.0 implementation (“codegen-first” CPU-sim; NPU emit-only here)
 
-v10 focuses on turning PTO‑RT into a **mature multi-backend runtime/compiler** while **hardening and completing** the v9
+v10 focuses on turning PTO‑WSP into a **mature multi-backend workload+schedule compiler** while **hardening and completing** the v9
 headline features (CSP + dispatch/task_window-based scheduling). Concretely, v10 targets:
 
-1) a more solid backend/runtime architecture (inspired by mature runtime patterns seen in pto-isa-lh), and  
+1) a more solid backend/runtime architecture (by targeting the decoupled `pto-runtime`), and  
 2) making v9’s **CSP/CSPT** and **dispatch/issue** semantics “production-grade” (not “new”), and  
 3) an additional accelerator target: **AMD AIE / AMD NPU-style dataflow accelerators** (Dato-style stream + layout model).
 
-This is **not** a commitment to copy pto-isa-lh; it is an explicit plan to adopt *mature backend patterns* where they are
-clearly better, while keeping PTO‑RT’s programming model goals.
+This is **not** a commitment to build a bespoke runtime inside PTO‑WSP; it is an explicit plan to adopt a decoupled runtime
+(`pto-runtime`) as the execution substrate while keeping PTO‑WSP’s programming model goals.
 
 ## v9 status (why this is *not* “new”)
 
@@ -27,6 +27,13 @@ v9 already implements the *core direction*:
 
 So v10 is about **completeness, robustness, and portability**, not introducing CSP/dispatch as brand-new features.
 
+v10 also requires a **semantics-honest** integration with the decoupled `pto-runtime` project:
+
+- Phase 1 (host graph build) can unblock runnable backends quickly, but must not claim true `task_window` backpressure-to-orchestration.
+- Phase 2 (task-buffer + on-device expansion) is required for v10 completeness and restores the v9 thesis.
+
+See `docs/future/v10_pto_runtime_interface.md`.
+
 ## Scope
 
 ### In scope (v10)
@@ -34,6 +41,7 @@ So v10 is about **completeness, robustness, and portability**, not introducing C
 - **Backend maturity**
   - Make the “artifact runtime” architecture clearly layered and testable:
     - frontend → typed IR → codegen (CPU-sim / NPU / AIE) → artifact runtime
+  - Define a **versioned artifact package + manifest** aligned to `pto-runtime` (kernels, schedule/CSP payload, slots/symbols ABI)
   - Improve runtime concurrency/flow-control fundamentals to support CSP safely:
     - explicit task window semantics (stall-only is baseline)
     - deadlock detection + diagnostics (esp. for CSP)
@@ -186,7 +194,7 @@ Deliverables:
   - layout/sharding annotations
   - a compile-time check that the stream graph is a DAG for the v10 runnable path (reject cyclic graphs explicitly until buffered channels exist)
 - A documentation page describing:
-  - mapping from PTO‑RT IR to Dato-like stream model
+    - mapping from PTO‑WSP IR to a Dato-like stream model
   - what is supported vs not supported in v10 for AIE
 
 ### W6) Multi-NPU architecture representation (enables runnable Ascend + AIE)
@@ -227,6 +235,17 @@ Runnable NPU backends (Ascend/AIE):
   - timing/cycle reporting sanity (strict semantics; tolerance-based checks where hardware noise exists)
   - CSP correctness (no missed waits, no silent deadlocks)
   - for Ascend, support “remote device” execution via SSH (server+workspace+env in `.ASCEND_SERVER.toml`, not committed)
+
+### pto-runtime targeting (v10 baseline)
+
+For v10, “backend maturity” should primarily mean “aligned to pto-runtime”, not “ported from older runtime patterns”:
+
+- local semantics backend: `pto-runtime` `a2a3sim` (AICPU/AICore scheduling in host threads)
+- Ascend backend: `pto-runtime` `a2a3` (real device execution)
+
+See:
+- `docs/future/pto_runtime_analysis.md`
+- `docs/future/pto_runtime_integration.md`
 
 ## Risks and open questions
 

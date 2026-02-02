@@ -1,6 +1,13 @@
-# PTO‑RT v10: Implementation Plan (draft)
+# PTO‑WSP v10: Implementation Plan (draft)
 
 This document outlines *how* we can evolve the current codebase to meet v10 goals.
+
+## 0. Interface checkpoint (gating doc)
+
+For v10, “implementing backends” is inseparable from defining a clean, versioned boundary with `pto-runtime`. Treat the
+interface contract as a gating specification:
+
+- `docs/future/v10_pto_runtime_interface.md`
 
 ## 1. Organizing principle
 
@@ -32,6 +39,7 @@ Artifact package (per target)
   - schedule metadata + policy IDs
   - slots/symbols ABI (dynamic axes, predicates)
   - ArchModel instance + capability matrix
+  - package manifest + ABI version (consumable by `pto-runtime`)
   |
   v
 Artifact runtime core (shared semantics)
@@ -105,7 +113,7 @@ Deliver:
 - flow-control stats (stall counts/time, high-water marks, current stall reason)
 - deadlock detection hooks + actionable diagnostics
 
-Conceptual flow-control shape (inspired by pto-isa-lh runtime2):
+Conceptual flow-control shape (aligned to pto-runtime task-buffer direction):
 
 ```
 orchestrator
@@ -122,16 +130,33 @@ scheduler
 ```
 
 Note:
-- Use pto-isa-lh’s runtime “flow control” patterns as a reference:
-  - multiple bounded rings (task table, heap, dep list, tensormap pool)
-  - backpressure between orchestrator and scheduler
-  - actionable diagnostics when bounds are violated
-  - scope-driven liveness (scope_begin/scope_end) and its interaction with task-window sizing
+- Target the decoupled `pto-runtime` as the execution substrate:
+  - v10 should avoid building a parallel bespoke runtime core inside PTO‑WSP.
+  - use `a2a3sim` for local semantics tests (no toolchain) and `a2a3` for real device.
+  - align bounded-resource (“multi-ring”) behavior to the pto-runtime task-buffer direction.
 
 Reference pointers:
-- `references/pto-isa-lh/docs/runtime_buffer_manager_methods.md`
-- `references/pto-isa-lh/src/runtime/pto_runtime_common.h`
-- `references/pto-isa-lh/src/runtime2/`
+- `references/pto-runtime/README.md`
+- `docs/future/pto-runtime-task-buffer.md`
+- `references/pto-runtime/src/runtime/host_build_graph/runtime/runtime.h`
+
+### M2.1) pto-runtime codegen pipeline (Phase 1)
+
+Phase 1 integration should be implemented as a **C++ codegen target** in PTO‑WSP that emits a pto-runtime-compatible
+`host_build_graph` source tree (mirroring pto-runtime examples):
+
+- `kernels/orchestration/*.cpp` — orchestration entry (build task graph via pto-runtime `Runtime`)
+- `kernels/*/*.cpp` — executor-specific kernel sources (AIV/AIC, etc.)
+- `kernels/kernel_config.py` — declares orchestration symbol + kernel list (`func_id`, `core_type`)
+
+At the Python level, PTO‑WSP should **import pto-runtime tooling** (from the submodule, via a small bridge helper) to build
+and run the generated tree:
+
+- `RuntimeBuilder(platform="a2a3sim")` for local semantics testing
+- `RuntimeBuilder(platform="a2a3")` for real-device runs (toolchain-gated)
+
+Missing pto-runtime capabilities (multi-AICPU dispatch mapping, CSP channels, task-buffer backpressure) must be treated as
+explicit gaps; do not claim enforcement until the runtime exposes the necessary APIs.
 
 ### M3) Cross-backend CSP runtime
 
@@ -143,10 +168,15 @@ Deliver:
 ### M4) Ascend backend: from emit-only to runnable
 
 Deliver:
-- keep emission for inspection, but add a runnable path in proper CANN environments:
-  - build host runtime + device binaries
-  - load and execute artifacts
+- keep emission for inspection, but add a runnable path in proper CANN environments by targeting `pto-runtime`:
+  - build pto-runtime host runtime + device binaries (`a2a3`)
+  - emit/register kernels and the schedule/orchestration binary
+  - load and execute
   - report cycles and (optionally) profiling
+
+Phasing recommendation:
+- Phase 1: generate a **host orchestration `.so`** that builds the task graph via pto-runtime APIs (unblocks runnable backend).
+- Phase 2: move expansion/orchestration onto AICPU using the task-buffer direction (restores PTO‑WSP’s on-device expansion thesis).
 
 ### M5) AIE backend: runnable target with toolchain integration
 
@@ -183,6 +213,7 @@ Reference pointers:
   - practical execution:
     - allow running tests via SSH on a device server (repo sync + build/run)
     - keep server details out of git: `.ASCEND_SERVER.toml` (ignored) with an `.example` template
+    - if `pto-runtime` is integrated as a submodule, ensure remote scripts sync the submodule too
 
 - AIE validation suite:
   - correctness vs golden

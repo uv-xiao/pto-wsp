@@ -1,6 +1,8 @@
-# PTO‑RT v10: Specification (draft)
+# PTO‑WSP v10: Specification (draft)
 
 > This document is a **draft spec** for v10. It is intended to be aligned with implementation as v10 is built.
+>
+> Interface checkpoint (gating spec): `docs/future/v10_pto_runtime_interface.md`.
 
 ## 1. Non-negotiable semantic rules
 
@@ -199,18 +201,58 @@ Each backend must expose:
 
 - runnable and validated locally
 - serves as the reference correctness backend
+- implemented by targeting `pto-runtime` **`a2a3sim`** so we exercise AICPU/AICore scheduling semantics on host threads
 
 ### 6.2 ascend_npu
 
 - runnable in a proper Ascend/CANN environment
 - must preserve v10 CSP + dispatch semantics
+- implemented by targeting `pto-runtime` **`a2a3`** (host runtime + AICPU scheduler + AICore kernels)
 
 ### 6.3 aie
 
 - runnable in an AIE-capable environment (hardware/emulator)
 - must preserve v10 CSP + dispatch semantics
 - local emit-only fallback is permitted when toolchains are absent, but output must remain structured
-- since AIE is dataflow/stream-driven, v10 requires:
+  - since AIE is dataflow/stream-driven, v10 requires:
   - explicit stream/channel edges in the emitted artifact, and
   - compile-time validation that the stream graph is a DAG **or** a clear “unsupported” error for cyclic stream graphs until
     buffered channels/capacity modeling is introduced.
+
+## 7. pto-runtime integration contract (Ascend + cpu_sim)
+
+For v10, “cpu_sim” and “ascend_npu” are implemented by targeting the decoupled `pto-runtime` project.
+
+Normative contract:
+
+- PTO‑WSP must emit a **versioned package** consumable by `pto-runtime`.
+- The package must be executable on:
+  - `a2a3sim` (local semantics testing), and
+  - `a2a3` (real device).
+- The integration must be **semantics-honest** about what is enforced vs recorded (see §1.3).
+
+### 7.1 Phase semantics (what we are allowed to claim)
+
+v10 allows a phased interface, but it must not misrepresent schedule semantics:
+
+- **Phase 1 (host graph build)** may be used to unblock runnable backends:
+  - an orchestration `.so` builds a (possibly large) static task graph using pto-runtime’s current host_build_graph APIs.
+  - This phase must **not claim** true `task_window` backpressure “to orchestration”, because orchestration runs to completion.
+- **Phase 2 (task-buffer)** is required for v10 completeness:
+  - orchestration/expansion happens on AICPU, incrementally, into bounded runtime buffers;
+  - `task_window(stall-only)` becomes real backpressure;
+  - CSP channel waits/signals participate in readiness and can deadlock with bounded resources (diagnostics required).
+
+This phase split and hazards are tracked in:
+- `docs/future/v10_pto_runtime_interface.md`
+
+### 7.2 Package + ABI requirements (minimum)
+
+The v10 package must include:
+
+- **Kernel registry**: `kernel_id → (executor_type, binary_payload, entry_symbol_or_addr)` with a stable ABI.
+- **Schedule payload**: policy IDs + parameters, task_window config, and capability declarations.
+- **CSP payload**: channel IDs, logical capacity, and latency model parameters (v10 default: capacity=1, latency=0 cycles).
+- **Slots/symbols schema**: stable IDs + widths + update protocol for “between-run updates without recompilation”.
+
+The package must carry an explicit ABI version (example): `wsp_runtime_abi = "v10.0"`.

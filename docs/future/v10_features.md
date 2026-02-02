@@ -1,4 +1,4 @@
-# PTO‑RT v10: Feature Catalog (draft)
+# PTO‑WSP v10: Feature Catalog (draft)
 
 This document is an at-a-glance catalog for v10. For rationale see `docs/future/v10_analysis.md`.
 
@@ -66,6 +66,7 @@ This document is an at-a-glance catalog for v10. For rationale see `docs/future/
   - **multi-ring flow control** (task ring + dep pools + heap/buffer arena + ready queues)
   - **stall statistics + high-water marks** for all bounded resources
   - deadlock detection + diagnostics (actionable)
+  - **target runtime**: align to the decoupled `pto-runtime` project (real device + a2a3sim parity)
 
 ### C2) NPU architecture model (Must)
 
@@ -81,8 +82,8 @@ This document is an at-a-glance catalog for v10. For rationale see `docs/future/
 
 ### C3) Backend targets (Must)
 
-- `cpu_sim`: fully validated locally
-- `ascend_npu`: runnable in CANN environment (not emit-only)
+- `cpu_sim`: implemented via `pto-runtime` `a2a3sim` (host-thread simulation of AICPU/AICore)
+- `ascend_npu`: runnable in CANN environment (not emit-only), via `pto-runtime` `a2a3`
 - `aie`: runnable in AIE environment (hardware/emulator; emit-only fallback allowed locally)
 
 ## D) Tooling and quality (Should)
