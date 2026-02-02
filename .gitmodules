@@ -1,3 +1,6 @@
 [submodule "3rdparty/pto-isa"]
 	path = 3rdparty/pto-isa
 	url = https://gitcode.com/uvxiao/pto-isa.git
+[submodule "3rdparty/pto-runtime"]
+	path = 3rdparty/pto-runtime
+	url = https://github.com/uv-xiao/pto-runtime

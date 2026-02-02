@@ -27,6 +27,10 @@ htmlcov/
 .ralph-loop/
 .claude/
 
+# Git worktrees (project-local)
+.worktrees/
+worktrees/
+
 # Local Ascend/CANN remote testing config (machine-specific)
 .ASCEND_SERVER.toml
 
