@@ -8,6 +8,7 @@
 #include "pto/wsp/codegen/cpp_builder.hpp"
 #include "pto/wsp/codegen/cmake_compiler.hpp"
 #include "pto/wsp/codegen/abi/workload_abi.hpp"
+#include "pto/wsp/codegen/pto_runtime_host_build_graph.hpp"
 #include "pto/wsp/backend/backend.hpp"
 #include "pto/wsp/ir/type_check.hpp"
 #include "pto/wsp/ir/codegen.hpp"
@@ -147,6 +148,10 @@ fs::path codegen_cache_dir() {
     if (const char* p = std::getenv("PTO_WSP_CODEGEN_CACHE_DIR"); p && *p) {
         return fs::path(p);
     }
+#if defined(PTO_WSP_SOURCE_DIR)
+    // Default to a repo-local cache so tests and sandboxes don't require writing to $HOME.
+    return fs::path(PTO_WSP_SOURCE_DIR) / "build" / ".pto_wsp_codegen_cache";
+#endif
     const char* home = std::getenv("HOME");
     if (!home || !*home) {
         throw std::runtime_error("PTO_WSP_CODEGEN_CACHE_DIR not set and HOME is missing");
@@ -3357,6 +3362,24 @@ py::dict compile_codegen(const pto::wsp::ir::Module& module,
         auto out = codegen_compile_ir(module, output_name);
         out["target"] = target;
         out["can_execute"] = true;
+        return out;
+    }
+
+    if (target == "a2a3sim_codegen" || target == "a2a3_codegen") {
+        const auto tc = pto::wsp::ir::type_check(module);
+        if (!tc.valid) {
+            throw std::runtime_error(tc.to_string());
+        }
+
+        const std::string output_name = module.name.empty() ? "main" : module.name;
+        auto sources = pto::wsp::codegen::pto_runtime::emit_host_build_graph_sources(module, options);
+        const std::string suffix = (target == "a2a3_codegen") ? "a2a3" : "a2a3sim";
+        auto tree = emit_sources_to_cache(sources, output_name, suffix);
+        py::dict out;
+        out["target"] = target;
+        out["can_execute"] = false;
+        out["artifact_dir"] = tree.dir;
+        out["cache_key"] = tree.cache_key;
         return out;
     }
 

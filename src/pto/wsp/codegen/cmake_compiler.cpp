@@ -94,6 +94,10 @@ fs::path cache_dir() {
     if (const char* p = std::getenv("PTO_WSP_CODEGEN_CACHE_DIR"); p && *p) {
         return fs::path(p);
     }
+#if defined(PTO_WSP_SOURCE_DIR)
+    // Default to a repo-local cache so tests and sandboxes don't require writing to $HOME.
+    return fs::path(PTO_WSP_SOURCE_DIR) / "build" / ".pto_wsp_codegen_cache";
+#endif
     const char* home = std::getenv("HOME");
     if (!home || !*home) {
         throw std::runtime_error("PTO_WSP_CODEGEN_CACHE_DIR not set and HOME is missing");
