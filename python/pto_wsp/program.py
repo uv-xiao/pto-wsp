@@ -244,6 +244,7 @@ class Program:
         self.options = options
         self.stats = ProgramStats()
         self.trace = ExecutionTrace()
+        self._pto_runtime_platform: str | None = None
 
         # Execution state
         self._lock = threading.Lock()
@@ -443,7 +444,15 @@ class Program:
         check_cpp_bindings()
         build = workload_to_codegen_ir(self.workload, module_name=module_name)
         opts = cpp.CompileOptions()
-        opts.target = str(self.target)
+        target = str(self.target)
+        if target == "pto_runtime_a2a3sim":
+            opts.target = "a2a3sim_codegen"
+            self._pto_runtime_platform = "a2a3sim"
+        elif target == "pto_runtime_a2a3":
+            opts.target = "a2a3_codegen"
+            self._pto_runtime_platform = "a2a3"
+        else:
+            opts.target = target
         result = cpp.compile_codegen(build.module, opts)
         self._can_execute = bool(result.get("can_execute", True))
         if self._can_execute:
@@ -684,6 +693,10 @@ class Program:
         start = time.perf_counter()
 
         if not self._can_execute:
+            if self._pto_runtime_platform and self._codegen_artifact_dir:
+                self._execute_pto_runtime()
+                self.stats.execute_time_ms = (time.perf_counter() - start) * 1000
+                return
             raise RuntimeError(
                 f"Target '{self.target}' is codegen-only in this environment; "
                 f"artifact_dir={self._codegen_artifact_dir!r}"
@@ -694,6 +707,46 @@ class Program:
         self._execute_codegen()
 
         self.stats.execute_time_ms = (time.perf_counter() - start) * 1000
+
+    def _execute_pto_runtime(self) -> None:
+        import numpy as np
+        from pto_wsp.types import DType, Tensor
+        from pto_wsp import pto_runtime_runner
+
+        if not self._pto_runtime_platform or not self._codegen_artifact_dir:
+            raise RuntimeError("pto-runtime execution requested but no artifact/platform is available")
+
+        self.stats.task_count = len(self._compiled_plan.tasks)
+
+        def ensure_numpy(t: Tensor) -> np.ndarray:
+            if t.data is None:
+                if t.dtype == DType.F32:
+                    t.data = np.zeros(t.shape, dtype=np.float32)
+                elif t.dtype == DType.F16:
+                    t.data = np.zeros(t.shape, dtype=np.float16)
+                elif t.dtype == DType.I32:
+                    t.data = np.zeros(t.shape, dtype=np.int32)
+                elif t.dtype == DType.I64:
+                    t.data = np.zeros(t.shape, dtype=np.int64)
+                else:
+                    raise ValueError(f"Unsupported dtype for pto-runtime backend: {t.dtype}")
+            if not isinstance(t.data, np.ndarray):
+                raise TypeError(f"Tensor.data must be a numpy.ndarray for pto-runtime backend (got {type(t.data)})")
+            return t.data
+
+        def run():
+            try:
+                arrays = [ensure_numpy(t) for t in self._codegen_tensors]
+                pto_runtime_runner.run_host_build_graph(
+                    artifact_dir=self._codegen_artifact_dir,
+                    platform=self._pto_runtime_platform,
+                    arrays=arrays,
+                )
+            finally:
+                self._complete.set()
+
+        self._codegen_thread = threading.Thread(target=run, daemon=True)
+        self._codegen_thread.start()
 
     def _execute_codegen(self) -> None:
         """Execute generated workload code in a background thread."""
