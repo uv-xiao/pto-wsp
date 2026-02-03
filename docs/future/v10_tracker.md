@@ -6,6 +6,12 @@ This file is a checklist tracker for executing `docs/future/v10_plan.md`.
 
 - **2026-02-02:** started pto-runtime integration bootstrap (submodule + Phase 1 emit-only scaffold + docs + tests).
   See `docs/plans/2026-02-02-pto-runtime-integration-v10.md`.
+- **2026-02-02 (later):** expanded the near-term plan from “emit-only scaffold” to “Phase 1 runnable + codegen-complete”
+  (a2a3sim must run in CI; a2a3 is toolchain-gated). See the same plan file (Task 10+).
+- **2026-02-02 (later):** Phase 1 runnable milestone landed:
+  - `target="pto_runtime_a2a3sim"` runs end-to-end in tests
+  - `target="pto_runtime_a2a3"` is wired and has a toolchain-gated smoke test
+  - codegen emits runnable orchestration + platform-correct kernels for the initial subset
 
 ## W1) Backend/runtime architecture maturity
 
@@ -19,9 +25,14 @@ This file is a checklist tracker for executing `docs/future/v10_plan.md`.
 - [ ] Define slots/symbols ABI (stable IDs, widths, update protocol; tensor→slot materialization rules)
 - [ ] Define CSP channel ABI (IDs, capacity, latency model; wait/signal protocol for scheduler)
 - [ ] Define schedule-policy protocol (policy IDs, parameters, evaluation contract; no policy leakage into pto-runtime)
-- [ ] Phase 1 integration (runnable): add `pto_runtime_a2a3sim` and `pto_runtime_a2a3` targets that:
+- [x] Phase 1 integration (runnable): add `pto_runtime_a2a3sim` and `pto_runtime_a2a3` targets that:
   - emit a visible `host_build_graph` source tree artifact, and
   - wrap pto-runtime tooling to compile+run it (a2a3sim/a2a3)
+  - [x] Define Phase 1 orchestration arg ABI (ptr/size pairs) and document it
+  - [x] Emit platform-correct kernels (`aiv_sim` vs `aiv`) and a platform-selecting `kernel_config.py`
+  - [x] Upgrade orchestration codegen from stub to runnable (supported subset only)
+  - [x] Implement PTO‑WSP Python runner for `pto_runtime_a2a3sim` (end-to-end test must pass in CI)
+  - [x] Wire `pto_runtime_a2a3` runner path (toolchain-gated; test skipped if `ASCEND_HOME_PATH` absent)
 - [ ] Phase 2 integration: implement AICPU-side expansion into bounded task-buffer (task_window backpressure + CSP edges) aligned to pto-runtime roadmap
 - [ ] Consolidate codegen build plumbing (deterministic artifact layout, logs, cache versioning policy)
 - [x] Make codegen cache writable in sandboxed environments (default to repo-local cache; still overridable via `PTO_WSP_CODEGEN_CACHE_DIR`)

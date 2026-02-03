@@ -20,6 +20,16 @@ v10 execution has started with **pto-runtime integration bootstrap**:
 
 Near-term execution plan is tracked in: `docs/plans/2026-02-02-pto-runtime-integration-v10.md`.
 
+**Update (later on 2026-02-02):** the plan was expanded from “bootstrap scaffolding” to a concrete “Phase 1 runnable +
+codegen-complete” definition:
+- the emitted `host_build_graph` source tree remains the canonical visible artifact, but
+- PTO‑WSP must wrap pto-runtime tooling to **build+run** after emitting, and
+- runnable targets are explicit: `pto_runtime_a2a3sim` (CI-required) and `pto_runtime_a2a3` (toolchain-gated).
+
+**Update (later on 2026-02-02):** Phase 1 runnable milestone landed in code:
+- `target="pto_runtime_a2a3sim"` runs end-to-end (tests pass)
+- `target="pto_runtime_a2a3"` is wired with a toolchain-gated smoke test
+
 v10 focuses on turning PTO‑WSP into a **mature multi-backend workload+schedule compiler** while **hardening and completing** the v9
 headline features (CSP + dispatch/task_window-based scheduling). Concretely, v10 targets:
 

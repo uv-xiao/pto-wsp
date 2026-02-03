@@ -7,20 +7,27 @@ This document outlines *how* we can evolve the current codebase to meet v10 goal
 **What exists now (done):**
 - `pto-runtime` submodule at `3rdparty/pto-runtime`
 - pto-runtime Python import bridge: `python/pto_wsp/pto_runtime_bridge.py`
-- Phase 1 emit-only scaffold: `target="a2a3sim_codegen"` emits a pto-runtime `host_build_graph` source tree
-  - emitter entrypoint: `include/pto/wsp/codegen/pto_runtime_host_build_graph.hpp`
+- Phase 1 runnable integration (host_build_graph):
+  - codegen targets emit a visible source tree:
+    - `target="a2a3sim_codegen"` / `target="a2a3_codegen"`
+    - emitter entrypoint: `include/pto/wsp/codegen/pto_runtime_host_build_graph.hpp`
+  - orchestration codegen emits a runnable task graph (`runtime->add_task` / `runtime->add_successor`) for the initial supported subset
+  - platform-correct kernel sources are emitted:
+    - `kernels/aiv_sim/*.cpp` (a2a3sim)
+    - `kernels/aiv/*.cpp` (a2a3)
+  - runnable PTO‑WSP targets exist:
+    - `target="pto_runtime_a2a3sim"` (end-to-end test passes)
+    - `target="pto_runtime_a2a3"` (wired; toolchain-gated)
+  - PTO‑WSP wraps pto-runtime tooling to build+run after emission:
+    - `python/pto_wsp/pto_runtime_runner.py`
 - sandbox-safe codegen cache default: `build/.pto_wsp_codegen_cache` (override via `PTO_WSP_CODEGEN_CACHE_DIR`)
 - CMake option `PTO_RUNTIME_PATH` (default: `3rdparty/pto-runtime`)
 
 **What is next (todo):**
-- make Phase 1 runnable:
-  - keep the **source tree** as a visible artifact (the canonical Phase 1 output)
-  - wrap pto-runtime tooling from PTO‑WSP Python to compile+run:
-    - `RuntimeBuilder(platform="a2a3sim")` for local runs
-    - `RuntimeBuilder(platform="a2a3")` for real device runs (toolchain-gated)
-  - add PTO‑WSP targets that *use* pto-runtime for execution (not emit-only):
-    - `target="pto_runtime_a2a3sim"`
-    - `target="pto_runtime_a2a3"`
+- harden Phase 1 correctness and honesty:
+  - make the supported-subset boundary explicit in code (fail fast with clear diagnostics)
+  - tighten dependency generation beyond “conservative sequential chaining” (tensor read/write analysis)
+  - validate `target="pto_runtime_a2a3"` in a real Ascend/CANN environment (toolchain + device)
 - define the v10 manifest/ABI as needed for Phase 2 (task-buffer) and long-term portability
 - map `dispatch(policy)` to multi-AICPU scheduling semantics (currently a documented gap)
 - implement CSP channel semantics + diagnostics on the pto-runtime path (Phase 2 target)

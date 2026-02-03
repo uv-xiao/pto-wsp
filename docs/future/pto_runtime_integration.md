@@ -100,6 +100,32 @@ At the Python level, PTO‑WSP should **import pto-runtime tooling** (from the s
 PTO‑WSP should wrap this as part of its own “compile + run” flow for `pto_runtime_*` targets, while still keeping the emitted
 source tree as the primary visible artifact (reviewable output).
 
+### Phase 1 “complete integration” definition (not just emit stubs)
+
+For v10, “Phase 1 integration is done” does **not** mean “we emitted placeholder sources”. It means:
+
+- PTO‑WSP emits a **visible host_build_graph source tree** artifact, and
+- PTO‑WSP wraps pto-runtime tooling to **build+run** that artifact end-to-end:
+  - `target="pto_runtime_a2a3sim"` must be runnable in CI/local dev (no Ascend toolchain required)
+  - `target="pto_runtime_a2a3"` must be wired (toolchain-gated by `ASCEND_HOME_PATH`)
+- the generated sources are **codegen-complete** for an initial supported subset:
+  - orchestration C++ builds a runnable task graph (`add_task`/`add_successor`, plus tensor H2D/D2H hooks)
+  - kernels are real for both:
+    - `a2a3sim` (plain C++ simulation kernels), and
+    - `a2a3` (incore kernels; toolchain-gated compilation)
+
+Implementation plan and tracker are kept in: `docs/plans/2026-02-02-pto-runtime-integration-v10.md`.
+
+### Platform split in emitted sources (a2a3sim vs a2a3)
+
+To keep Phase 1 runnable without toolchains while still supporting real device runs, PTO‑WSP should emit:
+
+- `kernels/aiv_sim/*.cpp` for `a2a3sim` (plain C++ loop kernels; compiled by `g++` via pto-runtime tooling)
+- `kernels/aiv/*.cpp` for `a2a3` (incore kernels; compiled by `ccec` via pto-runtime tooling)
+
+`kernels/kernel_config.py` should select the correct kernel source list based on a platform hint (e.g.
+`PTO_RUNTIME_PLATFORM=a2a3sim|a2a3`) that the PTO‑WSP runner sets before importing the config.
+
 **Non-negotiable:** schedule/CSP semantics must not be implemented by Python “driving” execution. Python may build IR,
 invoke compilation, and launch runtime; semantics must live in artifacts/runtime logic.
 

@@ -62,6 +62,18 @@ For PTO‑WSP, “integrate with pto-runtime” means:
 No “emit-only” backend is acceptable for v10 completeness; `emit-only` is allowed only as a degraded experience when toolchains
 are absent locally.
 
+### 2.1 Phase 1 “complete integration” (codegen-complete + runnable targets)
+
+Phase 1 is considered “complete” only when:
+
+- the emitted source tree remains the **canonical visible artifact**, and
+- PTO‑WSP provides runnable targets that wrap pto-runtime tooling end-to-end:
+  - `target="pto_runtime_a2a3sim"` (must run in CI/local dev)
+  - `target="pto_runtime_a2a3"` (wired; toolchain-gated by `ASCEND_HOME_PATH`)
+- the generated sources are **codegen-complete** for an initial supported subset (not stubs):
+  - orchestration C++ builds a runnable task graph (`add_task`/`add_successor`) and performs tensor H2D/D2H glue, and
+  - kernels exist for both `a2a3sim` (plain C++) and `a2a3` (incore, toolchain-gated compilation).
+
 ## 3) Artifact contract (Phase 1 source tree; Phase 2 package)
 
 ### 3.1 Phase 1 (host_build_graph): source tree artifact (canonical)
@@ -69,7 +81,7 @@ are absent locally.
 Phase 1’s canonical artifact is a **source tree** shaped like pto-runtime examples:
 
 - `kernels/orchestration/*.cpp` — orchestration function (host builds graph via `Runtime`)
-- `kernels/*/*.cpp` — kernel sources by executor type (AIV/AIC, etc.)
+- `kernels/*/*.cpp` — kernel sources by executor type/platform (AIV/AIC, sim vs device)
 - `kernels/kernel_config.py` — orchestration symbol + kernel list (`func_id`, `core_type`)
 
 PTO‑WSP must keep this tree **visible** (reviewable) as the primary artifact, even if pto-runtime caches compiled outputs
@@ -77,6 +89,18 @@ elsewhere.
 
 Phase 1 may additionally write a small manifest (optional) to locate build outputs and record “enforced vs recorded” status,
 but Phase 1 correctness must not depend on hidden host-side behavior.
+
+### 3.1.1 Orchestration argument ABI (Phase 1)
+
+For Phase 1, PTO‑WSP should use a simple orchestration arg ABI that is easy to generate from Python tensors and decode in
+C++ orchestration code:
+
+- `args = [ptr0, nbytes0, ptr1, nbytes1, ...]` (host pointer + byte size pairs, one per PTO‑WSP tensor)
+
+This ABI is intentionally minimal: orchestration allocates device memory, copies inputs, records outputs for copy-back, and
+builds tasks/deps.
+
+PTO‑WSP helper: `python/pto_wsp/pto_runtime_abi.py` (`build_orch_func_args`).
 
 ### 3.2 Phase 2 (task-buffer): versioned package (target)
 

@@ -20,6 +20,7 @@ if a feature is missing, PTO‑WSP must treat it as **recorded/diagnosed** (or �
 - Validation tooling to prove the mapping is enforced (not just serialized).
 - PTO‑WSP placeholders (current scaffold):
   - generated orchestration contains `TODO_PTO_RUNTIME_MULTI_AICPU_DISPATCH` in `kernels/orchestration/pto_wsp_orch.cpp`
+  - generated helper symbol name: `pto_wsp_select_aicpu_scheduler_id` (currently returns 0)
   - emitter entrypoint: `pto::wsp::codegen::pto_runtime::emit_host_build_graph_sources` (`include/pto/wsp/codegen/pto_runtime_host_build_graph.hpp`)
 
 ## 2) CSP requires auto-generated orchestrator/scheduler logic
