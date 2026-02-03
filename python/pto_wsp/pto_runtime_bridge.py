@@ -56,3 +56,17 @@ def import_runtime_builder() -> ModuleType:
     """Import pto-runtime's `runtime_builder` module."""
     return _import_from_dir("runtime_builder", pto_runtime_python_dir())
 
+
+def import_pto_compiler() -> ModuleType:
+    """Import pto-runtime's `pto_compiler` module."""
+    return _import_from_dir("pto_compiler", pto_runtime_python_dir())
+
+
+def import_bindings() -> ModuleType:
+    """Import pto-runtime's `bindings` module."""
+    return _import_from_dir("bindings", pto_runtime_python_dir())
+
+
+def import_elf_parser() -> ModuleType:
+    """Import pto-runtime's `elf_parser` module."""
+    return _import_from_dir("elf_parser", pto_runtime_python_dir())
