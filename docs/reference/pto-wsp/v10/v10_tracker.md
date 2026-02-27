@@ -1,0 +1,96 @@
+# PTO‑WSP v10 Tracker (draft)
+
+This file is a checklist tracker for executing `docs/future/v10_plan.md`.
+
+## Progress log
+
+- **2026-02-02:** started pto-runtime integration bootstrap (submodule + Phase 1 emit-only scaffold + docs + tests).
+  See `docs/plans/2026-02-02-pto-runtime-integration-v10.md`.
+- **2026-02-02 (later):** expanded the near-term plan from “emit-only scaffold” to “Phase 1 runnable + codegen-complete”
+  (a2a3sim must run in CI; a2a3 is toolchain-gated). See the same plan file (Task 10+).
+- **2026-02-02 (later):** Phase 1 runnable milestone landed:
+  - `target="pto_runtime_a2a3sim"` runs end-to-end in tests
+  - `target="pto_runtime_a2a3"` is wired and has a toolchain-gated smoke test
+  - codegen emits runnable orchestration + platform-correct kernels for the initial subset
+
+## W1) Backend/runtime architecture maturity
+
+- [x] Decide PTO‑WSP ↔ pto-runtime integration shape (submodule vs external dependency) and document it
+- [x] Add `pto-runtime` git submodule at `3rdparty/pto-runtime`
+- [x] Add pto-runtime Python import bridge (`python/pto_wsp/pto_runtime_bridge.py`)
+- [x] Add Phase 1 emit-only scaffold target `target="a2a3sim_codegen"` emitting pto-runtime `host_build_graph` sources
+- [ ] Define and document the v10 package/manifest format (ABI versioning, targets, binaries, metadata) consumable by pto-runtime
+- [ ] Define and document the v10 artifact/runtime ABI **aligned to pto-runtime** (tasks, deps, slots, policy hooks)
+- [ ] Define kernel registry ABI (`kernel_id` mapping; executor types; sim vs device payload formats)
+- [ ] Define slots/symbols ABI (stable IDs, widths, update protocol; tensor→slot materialization rules)
+- [ ] Define CSP channel ABI (IDs, capacity, latency model; wait/signal protocol for scheduler)
+- [ ] Define schedule-policy protocol (policy IDs, parameters, evaluation contract; no policy leakage into pto-runtime)
+- [ ] Define frontend intrinsic/builtin mechanism (Python authoring → typed lowering → backend emitter registry)
+- [ ] Define optional `AST ↔ MLIR` bridge + region-selection pass contract (dynamic selection; no user-facing markers required)
+- [ ] Define backend artifact packaging contract (kernels + orchestration + metadata) and extension points
+- [x] Phase 1 integration (runnable): add `pto_runtime_a2a3sim` and `pto_runtime_a2a3` targets that:
+  - emit a visible `host_build_graph` source tree artifact, and
+  - wrap pto-runtime tooling to compile+run it (a2a3sim/a2a3)
+  - [x] Define Phase 1 orchestration arg ABI (ptr/size pairs) and document it
+  - [x] Emit platform-correct kernels (`aiv_sim` vs `aiv`) and a platform-selecting `kernel_config.py`
+  - [x] Upgrade orchestration codegen from stub to runnable (supported subset only)
+  - [x] Implement PTO‑WSP Python runner for `pto_runtime_a2a3sim` (end-to-end test must pass in CI)
+  - [x] Wire `pto_runtime_a2a3` runner path (toolchain-gated; test skipped if `ASCEND_HOME_PATH` absent)
+- [ ] Phase 2 integration: implement AICPU-side expansion into bounded task-buffer (task_window backpressure + CSP edges) aligned to pto-runtime roadmap
+- [ ] Consolidate codegen build plumbing (deterministic artifact layout, logs, cache versioning policy)
+- [x] Make codegen cache writable in sandboxed environments (default to repo-local cache; still overridable via `PTO_WSP_CODEGEN_CACHE_DIR`)
+- [x] Add CMake option `PTO_RUNTIME_PATH` (default: `3rdparty/pto-runtime`)
+- [ ] Implement bounded runtime resources (“multi-ring” flow control): task ring, tensormap pool, deplist pool, heap/buffer arena, ready queues
+- [ ] Add flow-control stats + high-water marks (per bounded resource) and surface them via program stats/diagnostics
+- [ ] Add runtime deadlock/diagnostic hooks suitable for CSP (CPU-sim; actionable stall/channel reports)
+- [ ] Include scope/liveness state (scope depth, scope-held outputs) in deadlock diagnostics
+
+## W2) CSP/CSPT semantics (cross-backend; CPU-sim first)
+
+- [ ] Finalize CSP semantics doc (process instances, channel ops, termination) (upgrade v9 semantics to “complete”)
+- [ ] Implement/verify channel ops are explicit (not tensor-inferred) in CPU-sim artifacts
+- [ ] Implement logical channel capacity semantics (token-based; default capacity=1) and enforce it consistently in runtime/codegen
+- [ ] Implement constant channel latency model (default 0 cycles; stall-only)
+- [ ] Add CSP deadlock tests + diagnostics (bounded resources)
+- [ ] Make CSP runnable on Ascend backend in CANN environment (no emit-only limitation in v10), via pto-runtime `a2a3`
+- [ ] Make CSP runnable on AIE backend in AIE environment (hardware/emulator)
+
+## W3) Programmable dispatch/issue policies
+
+- [ ] Define policy registry surface (IR → codegen/runtime policy modules) (upgrade v9 enforced subset)
+- [ ] Keep baseline `round_robin` policy and add at least one additional `pto_runtime_a2a3sim` policy
+- [ ] Implement required v10 `dispatch` multi-scheduler semantics:
+  - static per-task `scheduler_id` serialization fast-path, and
+  - dynamic `dispatch_hook(policy_id, task_ctx, runtime_ctx)` hook-path
+- [ ] Ensure `dispatch` + `task_window` are preserved in NPU emit-only artifacts
+- [ ] Ensure non-core scheduling knobs are explicitly “unsupported/ignored” in emitted artifacts
+
+## W4) Runtime predicates + tensor→scalar conversion
+
+- [ ] Expand ScalarExpr coverage (easy missing ops)
+- [ ] Add explicit tensor→scalar materialization API (reductions/comparisons)
+- [ ] Plumb tensor-derived scalars into artifact control (via slots) without recompiling artifacts
+- [ ] Add tests for data-dependent control (MoE-routing style toy workloads)
+
+## W5) AMD AIE / dataflow accelerator backend (runnable target; emit-only fallback)
+
+- [ ] Define `target="aie"` artifact format (task graph + streams + layouts)
+- [ ] Implement AIE backend preserving dispatch + task_window + stream semantics (runnable in AIE env; emit-only fallback acceptable)
+- [ ] Add compile-time stream-graph validation (DAG required for v10 runnable path; reject cyclic graphs explicitly)
+- [ ] Add doc: PTO‑WSP IR ↔ Dato-like model mapping and v10 support matrix
+
+## W6) Multi-NPU architecture representation
+
+- [ ] Define a backend-agnostic NPU architecture model (memory hierarchy, exec units, sync, launch model)
+- [ ] Implement Ascend arch instance and wire it through codegen/runtime
+- [ ] Implement AIE arch instance and wire it through codegen/runtime
+- [ ] Add per-backend capability matrix (enforced vs ignored schedule + CSP support)
+
+## Validation
+
+- [ ] Ensure all examples remain self-validating (golden + runner + cycle tolerance)
+- [ ] Add at least one CSP example and ensure it validates on `pto_runtime_a2a3sim`
+- [ ] Parity-gate `cpu_sim` removal: validate all v9 semantics on `pto_runtime_a2a3sim` before deleting legacy backend
+- [ ] Add a backend validation suite runnable on Ascend/CANN (correctness + cycles + CSP) via pto-runtime `a2a3`
+- [ ] Add a remote Ascend device testing harness driven by `.ASCEND_SERVER.toml` (ssh+rsync, build/run commands)
+- [ ] Add a backend validation suite runnable on AIE (correctness + cycles + CSP)
