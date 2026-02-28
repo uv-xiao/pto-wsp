@@ -1,6 +1,5 @@
 # Local-only leftovers from other branches / development
 __old_pto_wsp/
-references__old/
 
 # Build/test caches
 build/
@@ -11,12 +10,9 @@ build/
 .worktrees/
 .agents/
 
+# Large reference checkouts are intentionally not tracked on this branch
+references/
+
 # OS
 .DS_Store
 Thumbs.db
-
-# Optional: keep large research artifacts untracked by default
-references/research/*.pdf
-references/research/*.zip
-references/research/*.tar
-references/research/*.tar.gz
